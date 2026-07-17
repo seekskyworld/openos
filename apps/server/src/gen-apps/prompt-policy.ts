@@ -62,10 +62,11 @@ export function buildGeneratePrompt(input: {
     "1. 单文件：所有 CSS/JS 内联在文档中；禁止任何外部资源（script src、link href、图片外链、字体外链、fetch/XHR/WebSocket 一律不写）；",
     "2. 功能必须真实可用，不是静态摆设：按钮点得动、输入有反应、状态有变化；",
     "3. UI 参考 macOS 审美：系统字体栈、圆角、克制的配色、支持小窗口（最小 400×360）自适应；",
-    "4. 数据只存内存变量（刷新丢失可接受），不使用 localStorage/cookie；",
-    "5. 不引入框架，原生 HTML/CSS/JS 完成；",
-    `6. 应用定位风格：${TIER_GUIDANCE[input.tier]}`,
-    `7. ${LANGUAGE_GUIDANCE[input.language]}`,
+    "4. 应用运行在 OpenOS 的真实窗口内部——窗口边框、标题栏、红黄绿交通灯按钮由系统提供。因此绝对禁止：自己绘制窗口外壳/标题栏/红黄绿圆点/关闭最小化按钮；把内容做成居中悬浮的『窗口卡片』；给最外层加大圆角+投影模拟窗口；绘制桌面壁纸背景。正文内容应直接铺满整个视口（html,body{height:100%;margin:0}）。",
+    "5. 数据只存内存变量（刷新丢失可接受），不使用 localStorage/cookie；",
+    "6. 不引入框架，原生 HTML/CSS/JS 完成；",
+    `7. 应用定位风格：${TIER_GUIDANCE[input.tier]}`,
+    `8. ${LANGUAGE_GUIDANCE[input.language]}`,
     "代码质量：语义化结构、事件用 addEventListener、避免全局污染。",
   ].join("\n");
 
