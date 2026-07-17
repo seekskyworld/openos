@@ -39,8 +39,13 @@ const CSP = [
 
 /**
  * 生成式运行时 SDK（编译期注入，先于应用代码执行）。
- * - OpenOS.generate(payload)：postMessage RPC → 宿主中继 → /continue，Promise 返回 HTML 片段
+ * - OpenOS.generate(payload)：postMessage RPC → 宿主中继 → /continue，Promise 返回 HTML 片段。
+ *   payload 可带 sessionId（同一 id 的多次调用共享模型上下文，默认按 intent 分组）。
  * - OpenOS.mount(container, html)：插入片段并重建 <script> 节点（innerHTML 不执行脚本）
+ * - OpenOS.update({targetId, instruction, context?, sessionId?})：局部重生成——
+ *   只把 targetId 指向的元素现状发给模型，换回替换后的同一元素并原地替换，
+ *   不必重建整个容器（对应"diff 式增量更新"，但走「发送当前标记→模型给出替换」
+ *   而非字面 diff 算法，更简单也更安全，收益等价：只有变化的部分被重新生成）。
  * 沙箱 srcdoc origin 为 opaque，targetOrigin 只能 "*"；安全由宿主 source 校验保证。
  */
 const RUNTIME_SDK = `(function () {
@@ -54,29 +59,56 @@ const RUNTIME_SDK = `(function () {
     if (d.ok) p.resolve(String(d.fragment || ""));
     else p.reject(new Error(String(d.error || "generate failed")));
   });
+  function execScripts(container) {
+    var scripts = container.querySelectorAll("script");
+    for (var i = 0; i < scripts.length; i++) {
+      var old = scripts[i];
+      var s = document.createElement("script");
+      s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    }
+  }
+  function generate(payload) {
+    return new Promise(function (resolve, reject) {
+      var id = "rq" + (++seq) + "-" + Math.random().toString(36).slice(2);
+      pending[id] = { resolve: resolve, reject: reject };
+      parent.postMessage({ type: "openos:generate", requestId: id, payload: payload }, "*");
+      setTimeout(function () {
+        if (pending[id]) {
+          delete pending[id];
+          reject(new Error("generate timeout"));
+        }
+      }, 120000);
+    });
+  }
   window.OpenOS = {
-    generate: function (payload) {
-      return new Promise(function (resolve, reject) {
-        var id = "rq" + (++seq) + "-" + Math.random().toString(36).slice(2);
-        pending[id] = { resolve: resolve, reject: reject };
-        parent.postMessage({ type: "openos:generate", requestId: id, payload: payload }, "*");
-        setTimeout(function () {
-          if (pending[id]) {
-            delete pending[id];
-            reject(new Error("generate timeout"));
-          }
-        }, 120000);
-      });
-    },
+    generate: generate,
     mount: function (container, html) {
       container.innerHTML = html;
-      var scripts = container.querySelectorAll("script");
-      for (var i = 0; i < scripts.length; i++) {
-        var old = scripts[i];
-        var s = document.createElement("script");
-        s.textContent = old.textContent;
-        old.parentNode.replaceChild(s, old);
-      }
+      execScripts(container);
+    },
+    update: function (payload) {
+      var el = payload && typeof payload.targetId === "string"
+        ? document.getElementById(payload.targetId)
+        : null;
+      if (!el) return Promise.reject(new Error("update: targetId not found in DOM"));
+      var currentHtml = el.outerHTML;
+      return generate({
+        intent: "update",
+        prompt: payload.instruction,
+        context: payload.context,
+        sessionId: payload.sessionId,
+        targetId: payload.targetId,
+        currentHtml: currentHtml,
+      }).then(function (replacement) {
+        var wrapper = document.createElement("div");
+        wrapper.innerHTML = replacement;
+        var newEl = wrapper.firstElementChild;
+        if (!newEl) throw new Error("update: model returned no element");
+        el.parentNode.replaceChild(newEl, el);
+        execScripts(newEl);
+        return replacement;
+      });
     },
   };
 })();`;

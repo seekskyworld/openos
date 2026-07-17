@@ -478,10 +478,19 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     [],
   );
 
-  /** Runner 中继：应用内 OpenOS.generate → /continue（错误抛回给沙箱侧展示） */
+  /** Runner 中继：应用内 OpenOS.generate/update → /continue（错误抛回给沙箱侧展示） */
   const continueContent = useCallback(
-    (appId: string, payload: { intent: string; prompt: string; context?: string }) =>
-      clientRef.current.continueContent(appId, payload),
+    (
+      appId: string,
+      payload: {
+        intent: string;
+        prompt: string;
+        context?: string;
+        sessionId?: string;
+        targetId?: string;
+        currentHtml?: string;
+      },
+    ) => clientRef.current.continueContent(appId, payload),
     [],
   );
 

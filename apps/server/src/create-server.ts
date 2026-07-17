@@ -101,6 +101,7 @@ export function startBridgeServer(options: CreateOptions = {}) {
           ? agenticBudgetMs(s.agentMaxRounds)
           : 600_000;
       },
+      appLanguage: () => loadGenAppsSettings(env).appLanguage,
     }),
     sendJson,
     readBody,

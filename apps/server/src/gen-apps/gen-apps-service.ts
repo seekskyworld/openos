@@ -12,7 +12,11 @@ import {
   type GenAppSummary,
 } from "@openos/shared";
 import { compileArtifact, compileFragment } from "./artifact-compiler.js";
+import { ContinueSessionStore } from "./continue-session-store.js";
 import { genAppError, type UntrustedSuggestion } from "./domain.js";
+import type { GenAppLanguage } from "./gen-app-settings.js";
+import type { CoreMessage } from "../llm-core/index.js";
+import { buildContinuePrompt } from "./prompt-policy.js";
 import type { GenAppGenerator, GenAppRepository } from "./ports.js";
 
 /**
@@ -34,6 +38,8 @@ type ServiceDeps = {
   defaultSuggestionCount?: () => number;
   /** 生成整体超时（ms）；agentic 建议 240s */
   generateTimeoutMs?: () => number;
+  /** 续生成提示词的界面语言；缺省 auto */
+  appLanguage?: () => GenAppLanguage;
 };
 
 const FALLBACK_THEMES: GenAppIconTheme[] = [
@@ -75,10 +81,14 @@ export class GenAppsService {
   private readonly nowFn: () => number;
   private readonly defaultCountFn: () => number;
   private readonly generateTimeoutMsFn: () => number;
+  private readonly appLanguageFn: () => GenAppLanguage;
   private activeGenerations = 0;
-  /** 续生成滑动窗口（appId → 时间戳数组）与单应用并发锁 */
+  /** 续生成滑动窗口（appId → 时间戳数组，频控按应用维度） */
   private readonly continueHistory = new Map<string, number[]>();
+  /** 并发锁按会话维度（同应用的不同会话/标签页可并行） */
   private readonly continueInFlight = new Set<string>();
+  /** 续生成会话记忆：同一条续生成流跨调用保持上下文 */
+  private readonly continueSessions = new ContinueSessionStore();
 
   constructor(deps: ServiceDeps) {
     this.generator = deps.generator;
@@ -89,6 +99,7 @@ export class GenAppsService {
       (() => GEN_APP_LIMITS.suggestionCountDefault);
     this.generateTimeoutMsFn =
       deps.generateTimeoutMs ?? (() => GEN_APP_LIMITS.generateTimeoutMs);
+    this.appLanguageFn = deps.appLanguage ?? (() => "auto");
   }
 
   async suggest(
@@ -229,13 +240,23 @@ export class GenAppsService {
     }
   }
 
-  /** 运行时续生成（OpenOS.generate → /continue）：频控 + 单应用并发 1 + fragment 清洗 */
+  /**
+   * 运行时续生成（OpenOS.generate/update → /continue）：
+   * 频控（按应用）+ 并发锁（按会话）+ 会话记忆（跨调用连贯）+ fragment 清洗。
+   *
+   * 会话分组：显式 sessionId 优先；update 默认按目标元素分组（同一元素的连续
+   * 修改共享上下文）；其余按 intent 分组（单地址栏浏览器天然共享一条上下文，
+   * 应用代码无需自己管理 sessionId）。
+   */
   async continueContent(
     input: {
       appId: string;
       intent: unknown;
       prompt: unknown;
       context?: unknown;
+      sessionId?: unknown;
+      targetId?: unknown;
+      currentHtml?: unknown;
     },
     context: RequestContext,
   ): Promise<{ fragment: string }> {
@@ -247,10 +268,11 @@ export class GenAppsService {
     if (!isGenAppContinueIntent(input.intent)) {
       throw genAppError(
         "validation_failed",
-        "intent must be one of: browse | panel | search | content.",
+        "intent must be one of: browse | panel | search | content | update.",
         400,
       );
     }
+    const intent = input.intent;
     const prompt = String(input.prompt ?? "").trim();
     if (!prompt || prompt.length > GEN_APP_LIMITS.continuePromptMaxLength) {
       throw genAppError(
@@ -263,17 +285,37 @@ export class GenAppsService {
       typeof input.context === "string"
         ? input.context.slice(0, GEN_APP_LIMITS.continueContextMaxLength)
         : undefined;
-
-    // 单应用并发 1
-    if (this.continueInFlight.has(appId)) {
+    const sessionId =
+      typeof input.sessionId === "string" && input.sessionId.trim()
+        ? input.sessionId.trim().slice(0, GEN_APP_LIMITS.continueSessionIdMaxLength)
+        : undefined;
+    const targetId =
+      typeof input.targetId === "string" && input.targetId.trim()
+        ? input.targetId.trim().slice(0, 200)
+        : undefined;
+    const currentHtml =
+      typeof input.currentHtml === "string"
+        ? input.currentHtml.slice(0, GEN_APP_LIMITS.continueCurrentHtmlMaxLength)
+        : undefined;
+    if (intent === "update" && (!targetId || !currentHtml)) {
       throw genAppError(
         "validation_failed",
-        "Another runtime generation for this app is in progress.",
+        "update intent requires targetId and currentHtml.",
+        400,
+      );
+    }
+
+    const sessionKey = `${appId}:${sessionId ?? (intent === "update" ? `update:${targetId}` : intent)}`;
+
+    if (this.continueInFlight.has(sessionKey)) {
+      throw genAppError(
+        "validation_failed",
+        "Another runtime generation for this session is in progress.",
         429,
         true,
       );
     }
-    // 滑动窗口频控（次/分钟/应用）
+    // 滑动窗口频控（次/分钟/应用，跨该应用所有会话共享额度）
     const now = this.nowFn();
     const windowStart = now - 60_000;
     const recent = (this.continueHistory.get(appId) ?? []).filter(
@@ -290,26 +332,41 @@ export class GenAppsService {
     recent.push(now);
     this.continueHistory.set(appId, recent);
 
-    this.continueInFlight.add(appId);
+    this.continueInFlight.add(sessionKey);
     try {
       const timeout = AbortSignal.timeout(GEN_APP_LIMITS.continueTimeoutMs);
       const signal = AbortSignal.any
         ? AbortSignal.any([context.signal, timeout])
         : timeout;
-      const raw = await this.generator.continueContent(
-        {
-          appName: identity.name,
-          appDescription: identity.description,
-          sourceQuery: identity.sourceQuery,
-          intent: input.intent,
-          prompt,
-          context: extra,
-        },
-        signal,
-      );
-      return { fragment: compileFragment(raw) };
+
+      const built = buildContinuePrompt({
+        appName: identity.name,
+        appDescription: identity.description,
+        sourceQuery: identity.sourceQuery,
+        intent,
+        prompt,
+        context: extra,
+        targetId,
+        currentHtml,
+        language: this.appLanguageFn(),
+      });
+      const priorMessages = this.continueSessions.get(sessionKey) ?? [];
+      // 新会话：system+user 都是新增；续接会话：system 已在历史里，只新增 user
+      const newTurns: CoreMessage[] =
+        priorMessages.length > 0
+          ? [{ role: "user", content: built.user }]
+          : [
+              { role: "system", content: built.system },
+              { role: "user", content: built.user },
+            ];
+      const messages: CoreMessage[] = [...priorMessages, ...newTurns];
+
+      const raw = await this.generator.continueContent({ intent, messages }, signal);
+      const fragment = compileFragment(raw);
+      this.continueSessions.commit(sessionKey, newTurns, raw);
+      return { fragment };
     } finally {
-      this.continueInFlight.delete(appId);
+      this.continueInFlight.delete(sessionKey);
     }
   }
 

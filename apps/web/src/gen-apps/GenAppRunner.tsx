@@ -25,10 +25,17 @@ type Props = {
   manager: WindowManager;
   /** 红灯关闭请求：draft 会先安装成功再真正关闭 */
   onRequestClose: (windowId: string) => void;
-  /** 应用内 OpenOS.generate 中继（未提供则续生成不可用） */
+  /** 应用内 OpenOS.generate/update 中继（未提供则续生成不可用） */
   onContinue?: (
     appId: string,
-    payload: { intent: string; prompt: string; context?: string },
+    payload: {
+      intent: string;
+      prompt: string;
+      context?: string;
+      sessionId?: string;
+      targetId?: string;
+      currentHtml?: string;
+    },
   ) => Promise<string>;
   /** 安装中等状态提示 */
   meta?: string;
@@ -81,7 +88,14 @@ export function GenAppRunner({
       const data = event.data as {
         type?: unknown;
         requestId?: unknown;
-        payload?: { intent?: unknown; prompt?: unknown; context?: unknown };
+        payload?: {
+          intent?: unknown;
+          prompt?: unknown;
+          context?: unknown;
+          sessionId?: unknown;
+          targetId?: unknown;
+          currentHtml?: unknown;
+        };
       };
       if (data?.type !== "openos:generate" || typeof data.requestId !== "string") {
         return;
@@ -99,11 +113,21 @@ export function GenAppRunner({
         reply({ ok: false, error: "runtime generation unavailable" });
         return;
       }
+      const strField = (v: unknown) => (typeof v === "string" ? v : undefined);
       const payload = {
         intent: String(data.payload?.intent ?? ""),
         prompt: String(data.payload?.prompt ?? ""),
-        ...(typeof data.payload?.context === "string"
-          ? { context: data.payload.context }
+        ...(strField(data.payload?.context) !== undefined
+          ? { context: strField(data.payload?.context) }
+          : {}),
+        ...(strField(data.payload?.sessionId) !== undefined
+          ? { sessionId: strField(data.payload?.sessionId) }
+          : {}),
+        ...(strField(data.payload?.targetId) !== undefined
+          ? { targetId: strField(data.payload?.targetId) }
+          : {}),
+        ...(strField(data.payload?.currentHtml) !== undefined
+          ? { currentHtml: strField(data.payload?.currentHtml) }
           : {}),
       };
       relay(app.appId, payload)

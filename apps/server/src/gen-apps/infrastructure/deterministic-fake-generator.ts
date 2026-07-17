@@ -121,10 +121,15 @@ export class DeterministicFakeGenerator implements GenAppGenerator {
     input: ContinuePortInput,
     _signal: AbortSignal,
   ): Promise<string> {
+    // turn 数可验证会话历史确实被拼接进了 messages（离线冒烟用）
+    const turn = input.messages.filter((m) => m.role === "user").length;
+    const lastUser = input.messages.filter((m) => m.role === "user").at(-1);
+    const prompt =
+      typeof lastUser?.content === "string" ? lastUser.content.slice(0, 80) : "";
     return [
       `<div style="padding:16px;font-family:-apple-system,system-ui,sans-serif">`,
-      `<h3 style="margin:0 0 8px">Fake ${input.intent}</h3>`,
-      `<p>确定性 fake 片段：${input.prompt.slice(0, 80)}</p>`,
+      `<h3 style="margin:0 0 8px">Fake ${input.intent} · turn ${turn}</h3>`,
+      `<p>确定性 fake 片段：${prompt}</p>`,
       `<a data-href="fake://next">继续跳转</a>`,
       `</div>`,
     ].join("");

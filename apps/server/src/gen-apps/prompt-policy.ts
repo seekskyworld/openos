@@ -79,6 +79,8 @@ export function buildGeneratePrompt(input: {
     "适用：浏览器式导航、点开才需要的面板、搜索结果、详情页、下一章内容。不适用：计算、状态更新等本地 JS 能完成的事。",
     "要求：调用期间必须渲染页面内 loading 态；失败（reject）时展示页面内错误提示并允许重试；返回片段直接插入容器即可。",
     "browse 类应用（浏览器等）：生成的页面片段里可点击的链接会带 data-href 属性，用事件委托拦截 click 后再次调用 OpenOS.generate({intent:'browse', prompt: 该href}) 实现继续跳转。",
+    "会话记忆：同一个 sessionId 的多次调用会共享上下文（模型记得之前生成过什么），默认按 intent 自动分组——单地址栏浏览器无需关心 sessionId；只有需要多个并行独立会话（如多标签页）时才用不同 sessionId 区分：OpenOS.generate({intent, prompt, sessionId:'tab-2'})。",
+    "局部更新（比整块重新生成更快）：window.OpenOS.update({ targetId, instruction, context? }) → Promise<string>，只重新生成并原地替换某个已渲染元素（用其 id 定位），无需重建整个容器。适用：改一个卡片的状态、局部刷新一个列表项、按用户反馈微调某个区块的样式或文案。",
   ].join("\n");
 
   const user = JSON.stringify({
@@ -98,9 +100,15 @@ const CONTINUE_INTENT_GUIDANCE: Record<GenAppContinueIntent, string> = {
     "为给定的搜索词生成一组真实可信的搜索结果列表片段（标题、摘要、来源），链接一律用 data-href 属性。",
   content:
     "为给定主题生成一段高质量的内容片段（文章/数据/列表等），排版干净可读。",
+  update:
+    "你会收到一个界面元素当前的完整标记（含其 id 与内部结构）和一句修改指令。只输出该元素修改后的完整替换标记（同一个根元素，保留原 id，除非指令明确要求更换 id），不要输出周围的其他元素、不要解释、不要代码块围栏。视觉风格必须与现有界面保持一致。",
 };
 
-/** 运行时续生成（OpenOS.generate → /continue）：单轮、无修复循环 */
+/**
+ * 运行时续生成（OpenOS.generate/update → /continue）。
+ * 单轮无修复循环；是否带会话历史由 GenAppsService 决定——
+ * 本函数只负责当前这一轮的 system/user 文本，历史轮次的拼接在调用方完成。
+ */
 export function buildContinuePrompt(input: {
   appName: string;
   appDescription: string;
@@ -108,6 +116,9 @@ export function buildContinuePrompt(input: {
   intent: GenAppContinueIntent;
   prompt: string;
   context?: string;
+  /** update intent：目标元素 id 与当前完整标记 */
+  targetId?: string;
+  currentHtml?: string;
   language: GenAppLanguage;
 }): { system: string; user: string } {
   const system = [
@@ -119,11 +130,18 @@ export function buildContinuePrompt(input: {
     "3. 片段将被直接插入应用容器，样式作用域尽量收敛（避免覆盖宿主全局样式）；",
     `4. 任务：${CONTINUE_INTENT_GUIDANCE[input.intent]}`,
     `5. ${LANGUAGE_GUIDANCE[input.language]}`,
+    "6. 如果本次对话此前已经生成过内容，你会在上文看到——请与之前生成的内容保持一致（同一个虚构网站的结构、同一批数据），不要凭空改变已经确立的设定。",
   ].join("\n");
 
   const user = JSON.stringify({
     生成指令: input.prompt,
     ...(input.context ? { 应用上下文: input.context } : {}),
+    ...(input.intent === "update" && input.targetId
+      ? { 目标元素id: input.targetId }
+      : {}),
+    ...(input.intent === "update" && input.currentHtml
+      ? { 目标元素当前标记: input.currentHtml }
+      : {}),
     应用来源搜索词: input.sourceQuery,
   });
   return { system, user };

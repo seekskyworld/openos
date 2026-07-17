@@ -62,10 +62,17 @@ export interface GenAppsClient {
   remove(appId: string): Promise<void>;
   /** agentic 进度轮询；未知 key 返回 phase=unknown */
   progress?(key: string, signal?: AbortSignal): Promise<GenAppProgress>;
-  /** 运行时续生成（应用内 OpenOS.generate 中继） */
+  /** 运行时续生成（应用内 OpenOS.generate/update 中继） */
   continueContent(
     appId: string,
-    payload: { intent: string; prompt: string; context?: string },
+    payload: {
+      intent: string;
+      prompt: string;
+      context?: string;
+      sessionId?: string;
+      targetId?: string;
+      currentHtml?: string;
+    },
   ): Promise<string>;
   /** 流式生成：SSE 增量回调；resolve 于 done（旧服务端无此端点时抛错，调用方回退非流式） */
   generateDraftStream?(
@@ -336,7 +343,14 @@ export class HttpGenAppsClient implements GenAppsClient {
 
   async continueContent(
     appId: string,
-    payload: { intent: string; prompt: string; context?: string },
+    payload: {
+      intent: string;
+      prompt: string;
+      context?: string;
+      sessionId?: string;
+      targetId?: string;
+      currentHtml?: string;
+    },
   ): Promise<string> {
     const body = (await request(
       `/gen-apps/${encodeURIComponent(appId)}/continue`,

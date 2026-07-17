@@ -1,6 +1,41 @@
 # 生成式运行时（Generative Runtime）架构设计
 
-> 状态：owner 已批准。T1 + 频控（T2 核心）已实施；剩余：设置页开关、遥测（T2/T3 尾项）。
+> 状态：owner 已批准。T1 + 频控（T2 核心）+ 会话记忆 + 局部更新（Vibe OS 对照后追加）已实施；剩余：设置页开关、遥测（T2/T3 尾项）。
+
+## 8. 追加能力（对照 Microsoft Build 2026「Vibe OS」演示后实施）
+
+参考对象：Steve Sanderson 的 Vibe OS 演示——纯幻觉 UI，每个窗口绑一个持续的 Copilot
+session（对话记忆即状态），交互靠「发元素 id → 模型回 diff → 局部更新」实现速度与连贯性。
+我们保留真实执行的核心架构（不改），但吸收了它两个有价值的点：
+
+### 8.1 续生成会话记忆
+
+`/continue` 从完全无状态单发，改为按「会话流」维护 CoreMessage 历史
+（`ContinueSessionStore`，进程内、有界增长：每会话最多 6 轮、总会话数上限
+300、30 分钟闲置回收、单轮历史文本截断 4000 字符防 token 爆炸）。
+
+会话分组：显式 `sessionId` 优先；`update` intent 默认按目标元素分组
+（`update:${targetId}`）；其余按 `intent` 分组——单地址栏浏览器的连续导航
+天然共享一条上下文，应用代码不需要自己管理 sessionId；只有需要多个并行独立
+会话（多标签页）时才显式传不同 id。
+
+效果：生成式浏览器多次跳转后，模型记得自己虚构过的站点结构/品牌/数据，
+不会每次点击都重新脑补出不一致的内容（E2E 验证：品牌名、CSS 类名前缀、
+导航结构跨两次导航保持一致）。
+
+### 8.2 局部更新（`OpenOS.update`）
+
+不做字面 HTML diff 算法（parse+patch 在无 DOM 的服务端环境复杂且难安全校验），
+而是「发送目标元素当前完整标记 → 模型返回替换后的同一元素 → 客户端原地
+outerHTML 替换」——收益等价（只重新生成变化的部分，不必重建整个容器），
+实现和校验都更简单。
+
+```js
+await OpenOS.update({ targetId: "hero-card", instruction: "标题改得更耸动" });
+```
+
+新增 intent `update`；`buildContinuePrompt` 要求模型只输出替换元素本身
+（保留原 id），不输出周围内容、不解释。
 
 ## 1. 目标
 

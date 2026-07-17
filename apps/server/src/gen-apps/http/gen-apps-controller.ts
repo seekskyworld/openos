@@ -224,6 +224,9 @@ export class GenAppsController {
               intent: record.intent,
               prompt: record.prompt,
               context: record.context,
+              sessionId: record.sessionId,
+              targetId: record.targetId,
+              currentHtml: record.currentHtml,
             },
             context,
           );

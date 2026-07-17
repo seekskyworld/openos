@@ -41,6 +41,17 @@ export const GEN_APP_LIMITS = {
   /** 运行时续生成：prompt / context 长度上限 */
   continuePromptMaxLength: 2_000,
   continueContextMaxLength: 4_000,
+  /** 运行时续生成：会话 id / 目标元素当前 HTML 长度上限（update intent） */
+  continueSessionIdMaxLength: 80,
+  continueCurrentHtmlMaxLength: 8_000,
+  /** 会话记忆：每会话最多保留的 user/assistant 轮次对 */
+  continueSessionMaxTurns: 6,
+  /** 会话记忆：单轮存入历史的字符上限（超出截断，仅影响后续上下文，不影响当次返回） */
+  continueSessionHistoryCharsPerTurn: 4_000,
+  /** 会话记忆：进程内最多同时保留的会话数（超出淘汰最旧） */
+  continueSessionMaxCount: 300,
+  /** 会话记忆：闲置多久回收（ms） */
+  continueSessionTtlMs: 30 * 60 * 1000,
 } as const;
 
 /** 运行时续生成 intent（服务端据此选提示词模板） */
@@ -49,6 +60,7 @@ export const GEN_APP_CONTINUE_INTENTS = [
   "panel",
   "search",
   "content",
+  "update",
 ] as const;
 
 export type GenAppContinueIntent = (typeof GEN_APP_CONTINUE_INTENTS)[number];

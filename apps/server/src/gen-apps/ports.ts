@@ -4,6 +4,7 @@ import type {
   GenAppLaunchBundle,
   GenAppSummary,
 } from "@openos/shared";
+import type { CoreMessage } from "../llm-core/index.js";
 import type {
   UntrustedArtifact,
   UntrustedSuggestion,
@@ -26,14 +27,15 @@ export type GeneratePortInput = {
   onPhase?: (phase: { phase: string; round?: number }) => void;
 };
 
-/** 运行时续生成（应用内 OpenOS.generate 触发） */
+/**
+ * 运行时续生成（应用内 OpenOS.generate 触发）。
+ * 提示词组装 + 会话历史组装归 GenAppsService（唯一知道 session 状态的层）；
+ * 本端口只做「给一段 messages，换一段回复文本」——不关心是否有历史、
+ * 上一轮说了什么。intent 仅用于按场景挑温度/输出长度。
+ */
 export type ContinuePortInput = {
-  appName: string;
-  appDescription: string;
-  sourceQuery: string;
   intent: GenAppContinueIntent;
-  prompt: string;
-  context?: string;
+  messages: CoreMessage[];
 };
 
 export interface GenAppGenerator {
