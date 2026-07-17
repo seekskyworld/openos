@@ -353,12 +353,19 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           }
         } else {
           // 流式失败：窗口保留并显示错误页（红灯直接关闭）
-          const message =
+          let message =
             err instanceof GenAppClientError
               ? err.message
               : err instanceof Error
                 ? err.message
                 : String(err);
+          if (/Another generation is in progress/i.test(message)) {
+            message = "已有一个应用正在生成，请等它完成（或关闭其窗口取消）后再试。";
+          } else if (/rate limit/i.test(message)) {
+            message = "生成太频繁，请稍等一分钟再试。";
+          } else if (/timed out/i.test(message)) {
+            message = "生成超时（上游响应过慢），请重试一次。";
+          }
           patchRunning(windowId, {
             status: "ready",
             mode: "installed", // 红灯走直接关闭分支，不触发安装

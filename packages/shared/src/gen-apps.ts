@@ -17,8 +17,8 @@ export const GEN_APP_LIMITS = {
   htmlMaxBytes: 512 * 1024,
   /** 单次生成超时（ms） */
   generateTimeoutMs: 60_000,
-  /** 同时生成任务数 */
-  maxConcurrentGenerations: 1,
+  /** 同时生成任务数（多标签页/桌面+浏览器共用一个 Bridge，1 会互相饿死） */
+  maxConcurrentGenerations: 2,
   /** 已安装应用上限 */
   maxInstalledApps: 100,
   /** 单应用用户数据上限（bytes） */
