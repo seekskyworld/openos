@@ -99,7 +99,10 @@ export function compileArtifact(untrusted: UntrustedArtifact): ValidatedArtifact
   // 重建固定外壳：CSP 在任何不可信字节之前；运行时 SDK 先于应用代码
   const html = [
     "<!DOCTYPE html>",
-    '<html><head><meta charset="utf-8">',
+    // translate=no + notranslate：阻止浏览器/扩展翻译器介入沙箱内容
+    // （翻译扩展在 opaque origin iframe 里会自爆 postMessage 'null' 错误并可能改坏 DOM）
+    '<html translate="no"><head><meta charset="utf-8">',
+    '<meta name="google" content="notranslate">',
     `<meta http-equiv="Content-Security-Policy" content="${CSP}">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<script>${RUNTIME_SDK}</script>`,

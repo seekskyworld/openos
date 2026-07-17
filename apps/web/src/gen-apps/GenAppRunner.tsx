@@ -17,7 +17,7 @@ function buildPreviewDoc(partial: string): string {
   if (/<!DOCTYPE|<html/i.test(html)) {
     return html.replace(/(<html[^>]*>)/i, (m) => `${m}<head>${cspMeta}</head>`);
   }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">${cspMeta}</head><body>${html}</body></html>`;
+  return `<!DOCTYPE html><html translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate">${cspMeta}</head><body>${html}</body></html>`;
 }
 
 type Props = {
