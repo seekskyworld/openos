@@ -23,8 +23,9 @@ const SUGGEST_DEBOUNCE_MS = 500;
 const SUGGEST_MAX_WAIT_MS = 2000;
 
 export type RunningGenApp = {
-  /** 窗口 id：genapp-<appId> */
+  /** 窗口 id：genapp-<appId>（流式期为 genapp-<幂等键>） */
   windowId: string;
+  /** 流式生成期为空串，done 后回填 */
   appId: string;
   name: string;
   iconEmoji: string;
@@ -32,6 +33,10 @@ export type RunningGenApp = {
   html: string;
   /** draft = 关闭时需安装；installed = 直接关闭 */
   mode: "draft" | "installed";
+  /** streaming = 生成中渐进预览（脚本禁用）；ready = 编译制品可交互 */
+  status?: "streaming" | "ready";
+  /** 流式期的阶段文案（修复中 r2 等） */
+  streamPhase?: string;
 };
 
 export type GenAppWorkspaceView = {
@@ -168,39 +173,144 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     [debouncedSuggest],
   );
 
-  /** 点击候选：生成草稿并打开 Runner 窗口 */
+  /** 流式生成的中断控制（windowId → abort） */
+  const streamAborts = useRef<Map<string, AbortController>>(new Map());
+
+  const patchRunning = useCallback(
+    (windowId: string, patch: Partial<RunningGenApp>) => {
+      setRunning((prev) =>
+        prev.map((r) => (r.windowId === windowId ? { ...r, ...patch } : r)),
+      );
+    },
+    [],
+  );
+
+  /**
+   * 点击候选：流式生成——窗口立即打开，内容边生成边渲染（节流刷新），
+   * done 后换编译制品；流式端点不可用时回退非流式。
+   */
   const activateSuggestion = useCallback(
     async (suggestion: GenAppSuggestion) => {
       if (pendingSuggestionId) return; // 单并发
       setPendingSuggestionId(suggestion.id);
       setPhase("generating");
       setError(null);
-      // 幂等键带时间戳避免复用旧草稿挡住重新生成；进度轮询同 key
       const idempotencyKey = `${suggestion.id}-${Date.now()}`;
-      // 始终轮询：fast 路径 phase 多为 unknown，2s 成本可忽略；agentic 可见 phase 变化
-      startProgressPoll(idempotencyKey);
-      try {
-        const draft: GenAppDraft = await clientRef.current.generateDraft(
-          suggestion,
-          queryRef.current,
-          idempotencyKey,
-          new AbortController().signal,
-        );
+      const windowId = `genapp-${idempotencyKey}`;
+      const streamFn = clientRef.current.generateDraftStream?.bind(clientRef.current);
+
+      const finishWithDraft = (draft: GenAppDraft, streamed: boolean) => {
         const app: RunningGenApp = {
-          windowId: `genapp-${draft.summary.id}`,
+          windowId: streamed ? windowId : `genapp-${draft.summary.id}`,
           appId: draft.summary.id,
           name: draft.summary.name,
           iconEmoji: draft.summary.iconEmoji,
           iconTheme: draft.summary.iconTheme,
           html: draft.artifact.html,
           mode: "draft",
+          status: "ready",
         };
-        setRunning((prev) =>
-          prev.some((r) => r.appId === app.appId) ? prev : [...prev, app],
-        );
-        host.openWindow(app);
+        if (streamed) {
+          patchRunning(windowId, {
+            appId: app.appId,
+            html: app.html,
+            status: "ready",
+            streamPhase: undefined,
+          });
+        } else {
+          setRunning((prev) =>
+            prev.some((r) => r.appId === app.appId) ? prev : [...prev, app],
+          );
+          host.openWindow(app);
+        }
         setPhase("idle");
+      };
+
+      try {
+        if (streamFn) {
+          // —— 流式路径：先开窗，再渐进渲染 ——
+          const abort = new AbortController();
+          streamAborts.current.set(windowId, abort);
+          const app: RunningGenApp = {
+            windowId,
+            appId: "",
+            name: suggestion.name,
+            iconEmoji: suggestion.iconEmoji,
+            iconTheme: suggestion.iconTheme,
+            html: "",
+            mode: "draft",
+            status: "streaming",
+            streamPhase: "generating",
+          };
+          setRunning((prev) => [...prev, app]);
+          host.openWindow(app);
+
+          let buffer = "";
+          let lastFlush = 0;
+          let flushTimer: number | null = null;
+          const flush = () => {
+            lastFlush = Date.now();
+            patchRunning(windowId, { html: buffer });
+          };
+          const scheduleFlush = () => {
+            const since = Date.now() - lastFlush;
+            if (since >= 300) {
+              flush();
+              return;
+            }
+            if (flushTimer == null) {
+              flushTimer = window.setTimeout(() => {
+                flushTimer = null;
+                flush();
+              }, 300 - since);
+            }
+          };
+
+          try {
+            const draft = await streamFn(
+              suggestion,
+              queryRef.current,
+              idempotencyKey,
+              {
+                onDelta: (text) => {
+                  buffer += text;
+                  scheduleFlush();
+                },
+                onPhase: (p) => {
+                  if (p.phase === "fixing") {
+                    // 修复轮从头重流：清空预览
+                    buffer = "";
+                    flush();
+                  }
+                  const label =
+                    p.round != null ? `${p.phase}:${p.round}` : p.phase;
+                  setAgentPhase(label);
+                  patchRunning(windowId, { streamPhase: label });
+                },
+              },
+              abort.signal,
+            );
+            finishWithDraft(draft, true);
+          } finally {
+            if (flushTimer != null) window.clearTimeout(flushTimer);
+            streamAborts.current.delete(windowId);
+          }
+          return;
+        }
+
+        // —— 非流式回退：老路径 + 进度轮询 ——
+        startProgressPoll(idempotencyKey);
+        const draft: GenAppDraft = await clientRef.current.generateDraft(
+          suggestion,
+          queryRef.current,
+          idempotencyKey,
+          new AbortController().signal,
+        );
+        finishWithDraft(draft, false);
       } catch (err: unknown) {
+        // 流式失败：撤掉预览窗口
+        setRunning((prev) => prev.filter((r) => r.windowId !== windowId));
+        host.closeWindow(windowId);
         if (err instanceof GenAppClientError) {
           setError(err);
           setPhase("error");
@@ -213,7 +323,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
         setPendingSuggestionId(null);
       }
     },
-    [host, pendingSuggestionId, startProgressPoll, stopProgressPoll],
+    [host, patchRunning, pendingSuggestionId, startProgressPoll, stopProgressPoll],
   );
 
   /** 点击已安装应用：读库秒开（不调模型） */
@@ -258,6 +368,15 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
       const app = running.find((r) => r.windowId === windowId);
       if (!app) {
         host.closeWindow(windowId);
+        return;
+      }
+      // 流式生成中关闭 = 取消生成
+      if (app.status === "streaming") {
+        streamAborts.current.get(windowId)?.abort();
+        streamAborts.current.delete(windowId);
+        host.closeWindow(windowId);
+        setRunning((prev) => prev.filter((r) => r.windowId !== windowId));
+        setPhase("idle");
         return;
       }
       if (app.mode === "installed") {

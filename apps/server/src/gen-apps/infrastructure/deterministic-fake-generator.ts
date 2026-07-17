@@ -98,9 +98,18 @@ export class DeterministicFakeGenerator implements GenAppGenerator {
   }
 
   async generate(
-    _input: GeneratePortInput,
+    input: GeneratePortInput,
     _signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
+    // 模拟流式：分块吐出，前端可离线验证渐进渲染
+    if (input.onDelta) {
+      input.onPhase?.({ phase: "generating" });
+      const CHUNK = 400;
+      for (let i = 0; i < CALCULATOR_HTML.length; i += CHUNK) {
+        input.onDelta(CALCULATOR_HTML.slice(i, i + CHUNK));
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    }
     return {
       html: CALCULATOR_HTML,
       provider: "fake",

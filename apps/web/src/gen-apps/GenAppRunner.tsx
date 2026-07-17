@@ -1,6 +1,24 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { DesktopWindow, type WindowManager } from "../window";
+import { useI18n } from "../i18n";
 import type { RunningGenApp } from "./useGenAppWorkspace.js";
+
+/** 流式预览：脚本禁用（sandbox=""），CSP 拦外链；只做视觉渐进 */
+const PREVIEW_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:";
+
+function buildPreviewDoc(partial: string): string {
+  // 剥模型输出前缀围栏（流式中途尾部围栏可能未到）
+  let html = partial.replace(/^\s*```(?:html)?\s*/i, "");
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (m) => `${m}${cspMeta}`);
+  }
+  if (/<!DOCTYPE|<html/i.test(html)) {
+    return html.replace(/(<html[^>]*>)/i, (m) => `${m}<head>${cspMeta}</head>`);
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">${cspMeta}</head><body>${html}</body></html>`;
+}
 
 type Props = {
   app: RunningGenApp;
@@ -30,9 +48,30 @@ export function GenAppRunner({
   onContinue,
   meta,
 }: Props) {
+  const { t } = useI18n();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const onContinueRef = useRef(onContinue);
   onContinueRef.current = onContinue;
+
+  const streaming = app.status === "streaming";
+  const doc = useMemo(
+    () => (streaming ? buildPreviewDoc(app.html) : app.html),
+    [streaming, app.html],
+  );
+  const streamMeta = useMemo(() => {
+    if (!streaming) return undefined;
+    const key = (app.streamPhase ?? "generating").split(":")[0];
+    const label =
+      key === "fixing"
+        ? t("genapps.streaming.fixing")
+        : key === "checking"
+          ? t("genapps.streaming.checking")
+          : t("genapps.streaming.generating");
+    const round = app.streamPhase?.includes(":")
+      ? ` · ${app.streamPhase.split(":")[1]}`
+      : "";
+    return `${label}${round}`;
+  }, [streaming, app.streamPhase, t]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -85,8 +124,8 @@ export function GenAppRunner({
     <DesktopWindow
       id={app.windowId}
       title={`${app.iconEmoji} ${app.name}`}
-      meta={meta}
-      className="genapp-window"
+      meta={streamMeta ?? meta}
+      className={`genapp-window ${streaming ? "genapp-streaming" : ""}`.trim()}
       manager={manager}
       scroll="none"
       onRequestClose={() => onRequestClose(app.windowId)}
@@ -95,11 +134,12 @@ export function GenAppRunner({
         ref={frameRef}
         className="genapp-frame"
         title={app.name}
-        srcDoc={app.html}
-        sandbox="allow-scripts"
+        srcDoc={doc}
+        sandbox={streaming ? "" : "allow-scripts"}
         referrerPolicy="no-referrer"
         allow=""
       />
+      {streaming ? <div className="genapp-stream-bar" /> : null}
     </DesktopWindow>
   );
 }

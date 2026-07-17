@@ -103,6 +103,59 @@ export class GenAppsController {
         return true;
       }
 
+      // 流式生成：SSE 推 delta/phase/done/error，窗口先开、内容边生成边渲染
+      if (method === "POST" && pathname === "/api/gen-apps/drafts/stream") {
+        const payload = await this.parseJson(req, requestId, res);
+        if (payload === undefined) return true;
+        const record = payload as Record<string, unknown>;
+        const suggestion = parseGenAppSuggestion(record.suggestion);
+        if (!suggestion) {
+          sendJson(res, 400, {
+            error: {
+              code: "validation_failed",
+              message: "suggestion is invalid.",
+              requestId,
+              retryable: false,
+            },
+          } satisfies GenAppApiError);
+          return true;
+        }
+        const idempotencyKey = String(record.idempotencyKey ?? "");
+        res.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        const emit = (event: string, data: unknown) => {
+          if (res.writableEnded) return;
+          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+        this.deps.progress?.bind(idempotencyKey || null);
+        try {
+          const draft = await service.generateDraft(
+            {
+              suggestion,
+              query: String(record.query ?? ""),
+              idempotencyKey,
+            },
+            context,
+            {
+              onDelta: (text) => emit("delta", { text }),
+              onPhase: (phase) => emit("phase", phase),
+            },
+          );
+          emit("done", { draft, requestId });
+        } catch (error) {
+          const { body } = toErrorBody(error, requestId);
+          emit("error", body);
+        } finally {
+          this.deps.progress?.bind(null);
+          res.end();
+        }
+        return true;
+      }
+
       if (method === "POST" && pathname === "/api/gen-apps/drafts") {
         const payload = await this.parseJson(req, requestId, res);
         if (payload === undefined) return true;

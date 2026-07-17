@@ -67,6 +67,17 @@ export interface GenAppsClient {
     appId: string,
     payload: { intent: string; prompt: string; context?: string },
   ): Promise<string>;
+  /** 流式生成：SSE 增量回调；resolve 于 done（旧服务端无此端点时抛错，调用方回退非流式） */
+  generateDraftStream?(
+    suggestion: GenAppSuggestion,
+    query: string,
+    idempotencyKey: string,
+    callbacks: {
+      onDelta: (text: string) => void;
+      onPhase?: (phase: { phase: string; round?: number }) => void;
+    },
+    signal: AbortSignal,
+  ): Promise<GenAppDraft>;
 }
 
 function resolveConfig(): { apiBase: string; bridgeToken: string } {
@@ -222,6 +233,105 @@ export class HttpGenAppsClient implements GenAppsClient {
     await request(`/gen-apps/${encodeURIComponent(appId)}`, {
       method: "DELETE",
     });
+  }
+
+  async generateDraftStream(
+    suggestion: GenAppSuggestion,
+    query: string,
+    idempotencyKey: string,
+    callbacks: {
+      onDelta: (text: string) => void;
+      onPhase?: (phase: { phase: string; round?: number }) => void;
+    },
+    signal: AbortSignal,
+  ): Promise<GenAppDraft> {
+    const config = resolveConfig();
+    const headers = new Headers({ "content-type": "application/json" });
+    if (config.bridgeToken) headers.set(BRIDGE_TOKEN_HEADER, config.bridgeToken);
+    const response = await fetch(`${config.apiBase}/gen-apps/drafts/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ suggestion, query, idempotencyKey }),
+      signal,
+    });
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok || !contentType.includes("event-stream") || !response.body) {
+      throw new GenAppClientError({
+        status: response.status,
+        code: "internal_error",
+        message: `Stream endpoint unavailable (${response.status})`,
+        requestId: "",
+        retryable: true,
+      });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let draft: GenAppDraft | null = null;
+    let streamError: GenAppClientError | null = null;
+
+    const handleEvent = (eventName: string, dataRaw: string) => {
+      let data: unknown = null;
+      try {
+        data = JSON.parse(dataRaw);
+      } catch {
+        return;
+      }
+      const record = data as Record<string, unknown>;
+      if (eventName === "delta" && typeof record.text === "string") {
+        callbacks.onDelta(record.text);
+      } else if (eventName === "phase" && typeof record.phase === "string") {
+        callbacks.onPhase?.({
+          phase: record.phase,
+          round: typeof record.round === "number" ? record.round : undefined,
+        });
+      } else if (eventName === "done") {
+        draft = parseDraft((record as { draft?: unknown }).draft);
+      } else if (eventName === "error") {
+        const parsed = parseGenAppError(data);
+        streamError = new GenAppClientError({
+          status: 500,
+          code: parsed?.code ?? "internal_error",
+          message: parsed?.message ?? "Stream generation failed",
+          requestId: parsed?.requestId ?? "",
+          retryable: parsed?.retryable ?? true,
+        });
+      }
+    };
+
+    const processBuffer = () => {
+      let sep: number;
+      while ((sep = buffer.search(/\r?\n\r?\n/)) !== -1) {
+        const rawEvent = buffer.slice(0, sep);
+        buffer = buffer.slice(sep).replace(/^\r?\n\r?\n/, "");
+        let eventName = "message";
+        const dataLines: string[] = [];
+        for (const line of rawEvent.split(/\r?\n/)) {
+          if (line.startsWith("event:")) eventName = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+        }
+        if (dataLines.length > 0) handleEvent(eventName, dataLines.join("\n"));
+      }
+    };
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      processBuffer();
+    }
+    if (streamError) throw streamError;
+    if (!draft) {
+      throw new GenAppClientError({
+        status: 500,
+        code: "internal_error",
+        message: "Stream ended without result.",
+        requestId: "",
+        retryable: true,
+      });
+    }
+    return draft;
   }
 
   async continueContent(

@@ -137,6 +137,10 @@ export class GenAppsService {
       idempotencyKey: string;
     },
     context: RequestContext,
+    hooks?: {
+      onDelta?: (text: string) => void;
+      onPhase?: (phase: { phase: string; round?: number }) => void;
+    },
   ): Promise<GenAppDraft> {
     const { suggestion } = input;
     if (!suggestion?.name?.trim()) {
@@ -184,6 +188,8 @@ export class GenAppsService {
             query: input.query ?? "",
             name: suggestion.name,
             description: suggestion.description,
+            onDelta: hooks?.onDelta,
+            onPhase: hooks?.onPhase,
           },
           signal,
         )

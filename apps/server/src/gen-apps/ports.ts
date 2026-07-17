@@ -20,6 +20,10 @@ export type GeneratePortInput = {
   query: string;
   name: string;
   description: string;
+  /** 流式渲染：模型增量文本回调（agentic 修复轮会重新从头流出） */
+  onDelta?: (text: string) => void;
+  /** 流式渲染：阶段变化回调（generating/checking/fixing/done） */
+  onPhase?: (phase: { phase: string; round?: number }) => void;
 };
 
 /** 运行时续生成（应用内 OpenOS.generate 触发） */

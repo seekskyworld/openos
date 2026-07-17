@@ -148,6 +148,16 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
     const progressKey = this.currentProgressKey;
     const onProgress = (event: AgentProgressEvent) => {
       this.setProgress(event);
+      // SSE 流式路径：阶段同步给调用方
+      if (input.onPhase) {
+        if (event.phase === "checking" || event.phase === "fixing") {
+          input.onPhase({ phase: event.phase, round: event.round });
+        } else if (event.phase === "done") {
+          input.onPhase({ phase: "done" });
+        } else {
+          input.onPhase({ phase: event.phase });
+        }
+      }
     };
 
     // 任务包：HTML 应用的全部上下文（提示词/提取/校验/降级）都在这里；
@@ -182,6 +192,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
               target,
               timeoutMs: 300_000,
               signal: roundSignal,
+              onDelta: input.onDelta,
             },
             {
               model: llm.model,

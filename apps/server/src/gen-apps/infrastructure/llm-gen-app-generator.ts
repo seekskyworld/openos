@@ -128,12 +128,14 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       language: settings.appLanguage,
     });
 
+    input.onPhase?.({ phase: "generating" });
     const result = await coreGenerate(
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
         timeoutMs: 300_000,
         signal,
+        onDelta: input.onDelta,
       },
       {
         model: llm.model,

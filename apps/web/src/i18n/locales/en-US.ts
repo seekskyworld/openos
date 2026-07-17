@@ -279,6 +279,9 @@ export const enUS: Record<string, string> = {
   "genapps.mode.agentic": "Refine",
   "genapps.mode.hint": "Fast ≈ 30–60s single shot; Refine validates & auto-fixes (~1–3 min, more reliable)",
   "genapps.rounds": "Refine rounds",
+  "genapps.streaming.generating": "Generating",
+  "genapps.streaming.checking": "Checking",
+  "genapps.streaming.fixing": "Fixing",
   "genapps.rounds.hint":
     "Includes the first generation; up to 10 rounds. Slide to 0 = unlimited — the model may finish early, capped by a 10-minute budget",
 };

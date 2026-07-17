@@ -712,6 +712,36 @@ select,
   border-radius: 10px;
 }
 
+/* 流式生成中：窗口底部呼吸光条 */
+.genapp-stream-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  z-index: 20;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #4f8ef7 25%,
+    #b06ef7 50%,
+    #f7734f 75%,
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: genapp-stream-sweep 1.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes genapp-stream-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
 /* 拖拽/拉伸进行中：iframe 停接指针事件、全局禁选中，交互不被内容打断 */
 body.wm-interacting iframe {
   pointer-events: none;
