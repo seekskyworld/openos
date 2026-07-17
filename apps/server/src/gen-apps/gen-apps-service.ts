@@ -3,6 +3,7 @@ import {
   clampSuggestionCount,
   GEN_APP_LIMITS,
   GEN_APP_PROMPT_VERSION,
+  isGenAppContinueIntent,
   isGenAppIconTheme,
   type GenAppDraft,
   type GenAppIconTheme,
@@ -10,7 +11,7 @@ import {
   type GenAppSuggestion,
   type GenAppSummary,
 } from "@openos/shared";
-import { compileArtifact } from "./artifact-compiler.js";
+import { compileArtifact, compileFragment } from "./artifact-compiler.js";
 import { genAppError, type UntrustedSuggestion } from "./domain.js";
 import type { GenAppGenerator, GenAppRepository } from "./ports.js";
 
@@ -75,6 +76,9 @@ export class GenAppsService {
   private readonly defaultCountFn: () => number;
   private readonly generateTimeoutMsFn: () => number;
   private activeGenerations = 0;
+  /** 续生成滑动窗口（appId → 时间戳数组）与单应用并发锁 */
+  private readonly continueHistory = new Map<string, number[]>();
+  private readonly continueInFlight = new Set<string>();
 
   constructor(deps: ServiceDeps) {
     this.generator = deps.generator;
@@ -216,6 +220,90 @@ export class GenAppsService {
       return draft;
     } finally {
       this.activeGenerations -= 1;
+    }
+  }
+
+  /** 运行时续生成（OpenOS.generate → /continue）：频控 + 单应用并发 1 + fragment 清洗 */
+  async continueContent(
+    input: {
+      appId: string;
+      intent: unknown;
+      prompt: unknown;
+      context?: unknown;
+    },
+    context: RequestContext,
+  ): Promise<{ fragment: string }> {
+    const appId = String(input.appId ?? "").trim();
+    const identity = appId ? this.repository.findIdentity(appId) : null;
+    if (!identity) {
+      throw genAppError("app_not_found", `App ${appId} not found.`, 404);
+    }
+    if (!isGenAppContinueIntent(input.intent)) {
+      throw genAppError(
+        "validation_failed",
+        "intent must be one of: browse | panel | search | content.",
+        400,
+      );
+    }
+    const prompt = String(input.prompt ?? "").trim();
+    if (!prompt || prompt.length > GEN_APP_LIMITS.continuePromptMaxLength) {
+      throw genAppError(
+        "validation_failed",
+        `prompt must be 1-${GEN_APP_LIMITS.continuePromptMaxLength} chars.`,
+        400,
+      );
+    }
+    const extra =
+      typeof input.context === "string"
+        ? input.context.slice(0, GEN_APP_LIMITS.continueContextMaxLength)
+        : undefined;
+
+    // 单应用并发 1
+    if (this.continueInFlight.has(appId)) {
+      throw genAppError(
+        "validation_failed",
+        "Another runtime generation for this app is in progress.",
+        429,
+        true,
+      );
+    }
+    // 滑动窗口频控（次/分钟/应用）
+    const now = this.nowFn();
+    const windowStart = now - 60_000;
+    const recent = (this.continueHistory.get(appId) ?? []).filter(
+      (t) => t > windowStart,
+    );
+    if (recent.length >= GEN_APP_LIMITS.continueMaxPerMinute) {
+      throw genAppError(
+        "storage_quota_exceeded",
+        `Runtime generation rate limit (${GEN_APP_LIMITS.continueMaxPerMinute}/min) reached.`,
+        429,
+        true,
+      );
+    }
+    recent.push(now);
+    this.continueHistory.set(appId, recent);
+
+    this.continueInFlight.add(appId);
+    try {
+      const timeout = AbortSignal.timeout(GEN_APP_LIMITS.continueTimeoutMs);
+      const signal = AbortSignal.any
+        ? AbortSignal.any([context.signal, timeout])
+        : timeout;
+      const raw = await this.generator.continueContent(
+        {
+          appName: identity.name,
+          appDescription: identity.description,
+          sourceQuery: identity.sourceQuery,
+          intent: input.intent,
+          prompt,
+          context: extra,
+        },
+        signal,
+      );
+      return { fragment: compileFragment(raw) };
+    } finally {
+      this.continueInFlight.delete(appId);
     }
   }
 

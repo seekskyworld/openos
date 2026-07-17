@@ -10,6 +10,7 @@ import {
 import { genAppError, type UntrustedArtifact } from "../domain.js";
 import { buildGeneratePrompt } from "../prompt-policy.js";
 import type {
+  ContinuePortInput,
   GenAppGenerator,
   GeneratePortInput,
   SuggestPortInput,
@@ -106,6 +107,11 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
 
   suggest(input: SuggestPortInput, signal: AbortSignal) {
     return this.llmSuggest.suggest(input, signal);
+  }
+
+  continueContent(input: ContinuePortInput, signal: AbortSignal) {
+    // 续生成永远单轮快速，不走 agent 循环
+    return this.llmSuggest.continueContent(input, signal);
   }
 
   async generate(
@@ -257,6 +263,10 @@ export class SettingsSwitchedGenerator implements GenAppGenerator {
 
   suggest(input: SuggestPortInput, signal: AbortSignal) {
     return this.fast.suggest(input, signal);
+  }
+
+  continueContent(input: ContinuePortInput, signal: AbortSignal) {
+    return this.fast.continueContent(input, signal);
   }
 
   generate(input: GeneratePortInput, signal: AbortSignal) {

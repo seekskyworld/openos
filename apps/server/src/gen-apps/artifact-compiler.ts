@@ -37,6 +37,50 @@ const CSP = [
   "form-action 'none'",
 ].join("; ");
 
+/**
+ * 生成式运行时 SDK（编译期注入，先于应用代码执行）。
+ * - OpenOS.generate(payload)：postMessage RPC → 宿主中继 → /continue，Promise 返回 HTML 片段
+ * - OpenOS.mount(container, html)：插入片段并重建 <script> 节点（innerHTML 不执行脚本）
+ * 沙箱 srcdoc origin 为 opaque，targetOrigin 只能 "*"；安全由宿主 source 校验保证。
+ */
+const RUNTIME_SDK = `(function () {
+  var pending = {};
+  var seq = 0;
+  window.addEventListener("message", function (e) {
+    var d = e.data;
+    if (!d || d.type !== "openos:result" || !pending[d.requestId]) return;
+    var p = pending[d.requestId];
+    delete pending[d.requestId];
+    if (d.ok) p.resolve(String(d.fragment || ""));
+    else p.reject(new Error(String(d.error || "generate failed")));
+  });
+  window.OpenOS = {
+    generate: function (payload) {
+      return new Promise(function (resolve, reject) {
+        var id = "rq" + (++seq) + "-" + Math.random().toString(36).slice(2);
+        pending[id] = { resolve: resolve, reject: reject };
+        parent.postMessage({ type: "openos:generate", requestId: id, payload: payload }, "*");
+        setTimeout(function () {
+          if (pending[id]) {
+            delete pending[id];
+            reject(new Error("generate timeout"));
+          }
+        }, 120000);
+      });
+    },
+    mount: function (container, html) {
+      container.innerHTML = html;
+      var scripts = container.querySelectorAll("script");
+      for (var i = 0; i < scripts.length; i++) {
+        var old = scripts[i];
+        var s = document.createElement("script");
+        s.textContent = old.textContent;
+        old.parentNode.replaceChild(s, old);
+      }
+    },
+  };
+})();`;
+
 export function compileArtifact(untrusted: UntrustedArtifact): ValidatedArtifact {
   const raw = untrusted.html ?? "";
   if (typeof raw !== "string" || raw.trim().length === 0) {
@@ -52,12 +96,13 @@ export function compileArtifact(untrusted: UntrustedArtifact): ValidatedArtifact
     );
   }
 
-  // 重建固定外壳：CSP 在任何不可信字节之前
+  // 重建固定外壳：CSP 在任何不可信字节之前；运行时 SDK 先于应用代码
   const html = [
     "<!DOCTYPE html>",
     '<html><head><meta charset="utf-8">',
     `<meta http-equiv="Content-Security-Policy" content="${CSP}">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<script>${RUNTIME_SDK}</script>`,
     styles.map((css) => `<style>${css}</style>`).join("\n"),
     "</head><body>",
     body,
@@ -84,4 +129,57 @@ export function compileArtifact(untrusted: UntrustedArtifact): ValidatedArtifact
     runtimeVersion: GEN_APP_RUNTIME_VERSION,
     policyVersion: GEN_APP_POLICY_VERSION,
   });
+}
+
+const FRAGMENT_EXTERNAL_PATTERNS: RegExp[] = [
+  /<script\b[^>]*\bsrc\s*=/i,
+  /<link\b[^>]*\bhref\s*=/i,
+  /\bfetch\s*\(/i,
+  /\bXMLHttpRequest\b/i,
+  /\bWebSocket\s*\(/i,
+  /\bimport\s*\(/i,
+];
+
+/**
+ * 续生成 fragment 清洗：剥围栏与文档外壳、拒外链、限体积。
+ * fragment 与主制品同沙箱同信任级——只拦「会失效/超限」项。
+ */
+export function compileFragment(raw: string): string {
+  let fragment = (raw ?? "").trim();
+  if (!fragment) {
+    throw genAppError("invalid_model_output", "Model returned empty fragment.", 422, true);
+  }
+  // 剥 ```html 围栏
+  const fence = fragment.match(/^```(?:html)?\s*\n([\s\S]*?)\n?```\s*$/);
+  if (fence) fragment = fence[1].trim();
+  // 剥文档外壳（模型偶尔不听话给整页）：取 body 内容
+  const bodyMatch = fragment.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch) fragment = bodyMatch[1].trim();
+  fragment = fragment
+    .replace(/<!DOCTYPE[^>]*>/gi, "")
+    .replace(/<\/?(?:html|head|body)[^>]*>/gi, "")
+    .replace(/<meta\b[^>]*>/gi, "")
+    .trim();
+
+  for (const re of FRAGMENT_EXTERNAL_PATTERNS) {
+    if (re.test(fragment)) {
+      throw genAppError(
+        "artifact_rejected",
+        "Fragment references external resources (blocked in sandbox).",
+        422,
+        true,
+      );
+    }
+  }
+
+  const sizeBytes = Buffer.byteLength(fragment, "utf8");
+  if (sizeBytes > GEN_APP_LIMITS.continueMaxBytes) {
+    throw genAppError(
+      "artifact_rejected",
+      `Fragment exceeds ${GEN_APP_LIMITS.continueMaxBytes} bytes (${sizeBytes}).`,
+      413,
+      true,
+    );
+  }
+  return fragment;
 }

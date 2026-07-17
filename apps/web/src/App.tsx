@@ -882,6 +882,7 @@ export function App() {
             app={app}
             manager={wm}
             onRequestClose={(windowId) => void genApps.requestClose(windowId)}
+            onContinue={genApps.continueContent}
             meta={
               genApps.view.phase === "installing"
                 ? t("genapps.installing")

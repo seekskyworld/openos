@@ -1,3 +1,4 @@
+import type { GenAppContinueIntent } from "@openos/shared";
 import type { CreativityTier, GenAppLanguage } from "./gen-app-settings.js";
 
 const LANGUAGE_GUIDANCE: Record<GenAppLanguage, string> = {
@@ -69,12 +70,61 @@ export function buildGeneratePrompt(input: {
     `7. 应用定位风格：${TIER_GUIDANCE[input.tier]}`,
     `8. ${LANGUAGE_GUIDANCE[input.language]}`,
     "代码质量：语义化结构、事件用 addEventListener、避免全局污染。",
+    "",
+    "【生成式运行时（重要能力）】",
+    "环境已注入 window.OpenOS.generate({ intent, prompt, context? }) → Promise<HTML片段字符串>，可在运行时让 AI 继续生成内容。",
+    "核心原则：不要一次性生成完所有内容——首次只做应用骨架与核心交互，深层内容留到用户真正触达时用 OpenOS.generate 按需生成。",
+    "intent 取值：browse（生成完整网页内容，如浏览器地址栏导航）、panel（按需生成设置面板/弹窗等界面区块）、search（生成搜索结果列表）、content（生成一段文章/数据等内容）。",
+    "调用模式：async 事件处理里 const html = await OpenOS.generate({intent:'browse', prompt: url}); container.innerHTML = html;",
+    "适用：浏览器式导航、点开才需要的面板、搜索结果、详情页、下一章内容。不适用：计算、状态更新等本地 JS 能完成的事。",
+    "要求：调用期间必须渲染页面内 loading 态；失败（reject）时展示页面内错误提示并允许重试；返回片段直接插入容器即可。",
+    "browse 类应用（浏览器等）：生成的页面片段里可点击的链接会带 data-href 属性，用事件委托拦截 click 后再次调用 OpenOS.generate({intent:'browse', prompt: 该href}) 实现继续跳转。",
   ].join("\n");
 
   const user = JSON.stringify({
     应用名: input.name,
     应用描述: input.description,
     来源搜索词: input.query,
+  });
+  return { system, user };
+}
+
+const CONTINUE_INTENT_GUIDANCE: Record<GenAppContinueIntent, string> = {
+  browse:
+    "你是这个生成式浏览器的网页引擎。为给定的 URL 或搜索词生成一个完整、可读、内容丰富的网页正文片段（虚构但真实可信，风格贴合该 URL 所暗示的站点）。页内所有可点击链接一律写成 <a data-href=\"目标url\">文字</a>（不要 href 属性），供宿主应用拦截后继续生成跳转。",
+  panel:
+    "为宿主应用生成一个内嵌面板/弹窗界面片段，视觉风格与 macOS 审美一致（系统字体栈、圆角、克制配色）。控件需绑定行为的，内联 <script> 写在片段末尾。",
+  search:
+    "为给定的搜索词生成一组真实可信的搜索结果列表片段（标题、摘要、来源），链接一律用 data-href 属性。",
+  content:
+    "为给定主题生成一段高质量的内容片段（文章/数据/列表等），排版干净可读。",
+};
+
+/** 运行时续生成（OpenOS.generate → /continue）：单轮、无修复循环 */
+export function buildContinuePrompt(input: {
+  appName: string;
+  appDescription: string;
+  sourceQuery: string;
+  intent: GenAppContinueIntent;
+  prompt: string;
+  context?: string;
+  language: GenAppLanguage;
+}): { system: string; user: string } {
+  const system = [
+    `你在为 OpenOS 应用「${input.appName}」（${input.appDescription}）运行时生成增量内容。`,
+    "输出要求：只输出一段 HTML 片段（不含 <html>/<head>/<body> 外壳，可含 <style>/<script>），不要任何解释文字，不要代码块围栏。",
+    "硬性约束：",
+    "1. 禁止任何外部资源（script src、link href、图片外链、fetch/XHR/WebSocket）；",
+    "2. 沙箱限制：禁止 <form> 提交与 type=submit，按钮一律 type=\"button\"；禁止 alert/confirm/prompt；",
+    "3. 片段将被直接插入应用容器，样式作用域尽量收敛（避免覆盖宿主全局样式）；",
+    `4. 任务：${CONTINUE_INTENT_GUIDANCE[input.intent]}`,
+    `5. ${LANGUAGE_GUIDANCE[input.language]}`,
+  ].join("\n");
+
+  const user = JSON.stringify({
+    生成指令: input.prompt,
+    ...(input.context ? { 应用上下文: input.context } : {}),
+    应用来源搜索词: input.sourceQuery,
   });
   return { system, user };
 }

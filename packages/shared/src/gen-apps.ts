@@ -32,7 +32,33 @@ export const GEN_APP_LIMITS = {
   /** 搜索词长度 */
   queryMinLength: 1,
   queryMaxLength: 120,
+  /** 运行时续生成：频控（次/分钟/应用） */
+  continueMaxPerMinute: 6,
+  /** 运行时续生成：单次 fragment 字节上限 */
+  continueMaxBytes: 256 * 1024,
+  /** 运行时续生成：单次超时（ms） */
+  continueTimeoutMs: 90_000,
+  /** 运行时续生成：prompt / context 长度上限 */
+  continuePromptMaxLength: 2_000,
+  continueContextMaxLength: 4_000,
 } as const;
+
+/** 运行时续生成 intent（服务端据此选提示词模板） */
+export const GEN_APP_CONTINUE_INTENTS = [
+  "browse",
+  "panel",
+  "search",
+  "content",
+] as const;
+
+export type GenAppContinueIntent = (typeof GEN_APP_CONTINUE_INTENTS)[number];
+
+export function isGenAppContinueIntent(v: unknown): v is GenAppContinueIntent {
+  return (
+    typeof v === "string" &&
+    (GEN_APP_CONTINUE_INTENTS as readonly string[]).includes(v)
+  );
+}
 
 /** 图标主题 token（受限集合，不接受任意 CSS） */
 export const GEN_APP_ICON_THEMES = [

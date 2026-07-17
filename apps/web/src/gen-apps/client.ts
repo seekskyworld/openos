@@ -62,6 +62,11 @@ export interface GenAppsClient {
   remove(appId: string): Promise<void>;
   /** agentic 进度轮询；未知 key 返回 phase=unknown */
   progress?(key: string, signal?: AbortSignal): Promise<GenAppProgress>;
+  /** 运行时续生成（应用内 OpenOS.generate 中继） */
+  continueContent(
+    appId: string,
+    payload: { intent: string; prompt: string; context?: string },
+  ): Promise<string>;
 }
 
 function resolveConfig(): { apiBase: string; bridgeToken: string } {
@@ -217,5 +222,17 @@ export class HttpGenAppsClient implements GenAppsClient {
     await request(`/gen-apps/${encodeURIComponent(appId)}`, {
       method: "DELETE",
     });
+  }
+
+  async continueContent(
+    appId: string,
+    payload: { intent: string; prompt: string; context?: string },
+  ): Promise<string> {
+    const body = (await request(
+      `/gen-apps/${encodeURIComponent(appId)}/continue`,
+      { method: "POST", body: JSON.stringify(payload) },
+    )) as Record<string, unknown>;
+    if (typeof body.fragment !== "string") badPayload("continue");
+    return body.fragment;
   }
 }

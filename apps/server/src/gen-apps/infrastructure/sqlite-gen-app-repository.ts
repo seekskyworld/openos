@@ -8,7 +8,7 @@ import {
 import { randomUUID } from "node:crypto";
 import type { OpenOsDatabase } from "../../database/openos-database.js";
 import { genAppError, type ValidatedDraftInput } from "../domain.js";
-import type { GenAppRepository } from "../ports.js";
+import type { GenAppIdentity, GenAppRepository } from "../ports.js";
 
 /**
  * SQLite 仓储 adapter：只接受 ValidatedDraftInput，只返回领域对象。
@@ -270,6 +270,24 @@ export class SqliteGenAppRepository implements GenAppRepository {
       summary: toSummary(row),
       artifact: toArtifact(artifactRow),
       draftExpiresAt: row.draft_expires_at ?? 0,
+    };
+  }
+
+  findIdentity(appId: string): GenAppIdentity | null {
+    const row = this.database.db
+      .prepare(
+        `SELECT id, name, description, source_query
+           FROM gen_apps WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .get(appId) as
+      | { id: string; name: string; description: string; source_query: string }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      sourceQuery: row.source_query,
     };
   }
 

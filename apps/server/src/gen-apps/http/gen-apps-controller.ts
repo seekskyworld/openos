@@ -155,11 +155,28 @@ export class GenAppsController {
       }
 
       const idMatch = pathname.match(
-        /^\/api\/gen-apps\/([^/]+)(\/install|\/launch)?$/,
+        /^\/api\/gen-apps\/([^/]+)(\/install|\/launch|\/continue)?$/,
       );
       if (idMatch) {
         const appId = decodeURIComponent(idMatch[1]);
         const action = idMatch[2];
+
+        if (method === "POST" && action === "/continue") {
+          const payload = await this.parseJson(req, requestId, res);
+          if (payload === undefined) return true;
+          const record = payload as Record<string, unknown>;
+          const result = await service.continueContent(
+            {
+              appId,
+              intent: record.intent,
+              prompt: record.prompt,
+              context: record.context,
+            },
+            context,
+          );
+          sendJson(res, 200, { fragment: result.fragment, requestId });
+          return true;
+        }
 
         if (method === "POST" && action === "/install") {
           const summary = service.install(appId);

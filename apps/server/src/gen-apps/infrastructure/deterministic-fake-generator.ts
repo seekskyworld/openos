@@ -1,4 +1,5 @@
 import type {
+  ContinuePortInput,
   GenAppGenerator,
   GeneratePortInput,
   SuggestPortInput,
@@ -105,5 +106,18 @@ export class DeterministicFakeGenerator implements GenAppGenerator {
       provider: "fake",
       model: "deterministic-v1",
     };
+  }
+
+  async continueContent(
+    input: ContinuePortInput,
+    _signal: AbortSignal,
+  ): Promise<string> {
+    return [
+      `<div style="padding:16px;font-family:-apple-system,system-ui,sans-serif">`,
+      `<h3 style="margin:0 0 8px">Fake ${input.intent}</h3>`,
+      `<p>确定性 fake 片段：${input.prompt.slice(0, 80)}</p>`,
+      `<a data-href="fake://next">继续跳转</a>`,
+      `</div>`,
+    ].join("");
   }
 }

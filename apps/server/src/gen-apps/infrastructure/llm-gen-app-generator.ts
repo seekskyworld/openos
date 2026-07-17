@@ -6,9 +6,14 @@ import {
   creativityTier,
   loadGenAppsSettings,
 } from "../gen-app-settings.js";
-import { buildGeneratePrompt, buildSuggestPrompt } from "../prompt-policy.js";
+import {
+  buildContinuePrompt,
+  buildGeneratePrompt,
+  buildSuggestPrompt,
+} from "../prompt-policy.js";
 import { genAppError, type UntrustedArtifact, type UntrustedSuggestion } from "../domain.js";
 import type {
+  ContinuePortInput,
   GenAppGenerator,
   GeneratePortInput,
   SuggestPortInput,
@@ -147,5 +152,44 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       provider: llm.provider,
       model: result.model,
     };
+  }
+
+  /** 运行时续生成：单轮快速，无修复循环（烂片段重试成本低） */
+  async continueContent(
+    input: ContinuePortInput,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const llm = this.ensureConfigured();
+    const settings = loadGenAppsSettings(this.env);
+    const prompt = buildContinuePrompt({
+      appName: input.appName,
+      appDescription: input.appDescription,
+      sourceQuery: input.sourceQuery,
+      intent: input.intent,
+      prompt: input.prompt,
+      context: input.context,
+      language: settings.appLanguage,
+    });
+
+    const result = await coreGenerate(
+      {
+        protocol: llm.protocol,
+        target: this.wireTarget(llm),
+        timeoutMs: 90_000,
+        signal,
+      },
+      {
+        model: llm.model,
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user },
+        ],
+        // 内容类（browse/content）温度略高更有真实感；界面类收敛
+        temperature: input.intent === "panel" ? 0.3 : 0.7,
+        reasoningEffort: llm.reasoningEffort,
+        maxOutputTokens: input.intent === "browse" ? 8_000 : 4_000,
+      },
+    );
+    return result.text;
   }
 }

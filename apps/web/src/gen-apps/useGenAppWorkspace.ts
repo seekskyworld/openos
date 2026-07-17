@@ -297,6 +297,13 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     [],
   );
 
+  /** Runner 中继：应用内 OpenOS.generate → /continue（错误抛回给沙箱侧展示） */
+  const continueContent = useCallback(
+    (appId: string, payload: { intent: string; prompt: string; context?: string }) =>
+      clientRef.current.continueContent(appId, payload),
+    [],
+  );
+
   const view: GenAppWorkspaceView = useMemo(
     () => ({
       installed,
@@ -310,7 +317,15 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     [installed, suggestions, pendingSuggestionId, phase, agentPhase, error, running],
   );
 
-  return { view, search, activateSuggestion, activateInstalled, requestClose, remove };
+  return {
+    view,
+    search,
+    activateSuggestion,
+    activateInstalled,
+    requestClose,
+    remove,
+    continueContent,
+  };
 }
 
 export type GenAppWorkspace = ReturnType<typeof useGenAppWorkspace>;
