@@ -137,6 +137,29 @@ export function validateArtifact(html: string): ValidationIssue[] {
     // 可能是纯展示；若 body 文本也很少则并入 V6
   }
 
+  // V10: 沙箱交互杀手——form 提交与模态弹窗在 sandbox iframe 中被禁，
+  // 表现为「按钮点了没反应」，必须在生成期拦下
+  const usesForm = /<form\b/i.test(source) || /type\s*=\s*["']submit["']/i.test(source);
+  if (usesForm && !/preventDefault\s*\(/.test(source)) {
+    const m = source.match(/<form\b/i) ?? source.match(/type\s*=\s*["']submit["']/i);
+    issues.push({
+      severity: "fatal",
+      code: "form_submit_in_sandbox",
+      message:
+        "沙箱禁止表单提交：<form> 内按钮默认 type=submit，点击会被浏览器吞掉、看似无反应。移除 <form> 提交行为，按钮改为 type=\"button\" 并用 click 事件处理。",
+      excerpt: m ? excerptAround(source, m.index ?? 0) : undefined,
+    });
+  }
+  const modalMatch = source.match(/(?<![.\w])(?:window\.)?(alert|confirm|prompt)\s*\(/);
+  if (modalMatch) {
+    issues.push({
+      severity: "fatal",
+      code: "modal_in_sandbox",
+      message: `沙箱禁止 ${modalMatch[1]}() 弹窗：调用不会有任何显示，交互看似无反应。请把提示/确认/结果渲染在页面内。`,
+      excerpt: excerptAround(source, modalMatch.index ?? 0),
+    });
+  }
+
   // V6: 空壳
   const bodyText = parts.body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const elementCount = countMatches(parts.body, /<[a-zA-Z][\w:-]*/);
