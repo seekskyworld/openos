@@ -665,14 +665,11 @@ select,
   background: var(--surface-content);
 }
 
+/* Sir 与设置一致：under-dock 不改任何颜色，与常态完全相同 */
 .window.under-dock.sir-window {
-  background: rgba(22, 23, 27, 0.55);
-}
-
-/* Sir 深色窗在 under-dock 时保持深色标题栏/内容 */
-.window.under-dock.sir-window .window-title {
-  background: linear-gradient(180deg, rgba(38, 39, 44, 0.7), rgba(28, 29, 33, 0.6));
-  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: var(--surface-window);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
 }
 
 .window.under-dock.sir-window .window-content {
@@ -680,7 +677,7 @@ select,
 }
 
 .window.under-dock.sir-window .sir-shell {
-  background: rgba(20, 21, 26, 0.55);
+  background: transparent;
 }
 
 .window.under-dock.settings-window .window-content,
