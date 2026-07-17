@@ -57,12 +57,34 @@ export type WireHttpRequest = {
   body: unknown;
 };
 
+/** SSE 事件（llm-core 内部表示） */
+export type WireStreamEvent = {
+  event?: string;
+  data: string;
+};
+
+/**
+ * 流式累加器：逐事件吃 SSE，最终产出 CoreResponse。
+ * onEvent 可在厂商错误事件上抛 CoreProtocolError；finish 在无有效输出时抛 invalid_output。
+ */
+export interface WireStreamAccumulator {
+  onEvent(event: WireStreamEvent): void;
+  finish(): CoreResponse;
+}
+
 /** 单个 wire 协议适配器：内部协议 ↔ 厂商格式 */
 export interface WireProtocol {
   readonly id: string;
   toWire(target: WireTarget, request: CoreRequest): WireHttpRequest;
   /** 解析成功响应；格式不符时抛 CoreProtocolError(kind="invalid_output") */
   fromWire(payload: unknown, request: CoreRequest): CoreResponse;
+  /** 流式请求编码（stream 开启；URL 可与非流式不同） */
+  toWireStream(target: WireTarget, request: CoreRequest): WireHttpRequest;
+  /** 该协议的流式累加器；onDelta 用于向上层透出增量文本 */
+  createAccumulator(
+    request: CoreRequest,
+    onDelta?: (text: string) => void,
+  ): WireStreamAccumulator;
 }
 
 export type CoreErrorKind =
@@ -75,17 +97,21 @@ export class CoreProtocolError extends Error {
   readonly kind: CoreErrorKind;
   readonly status?: number;
   readonly upstreamMessage?: string;
+  /** 上游 retry-after 提示（毫秒） */
+  readonly retryAfterMs?: number;
 
   constructor(input: {
     kind: CoreErrorKind;
     message: string;
     status?: number;
     upstreamMessage?: string;
+    retryAfterMs?: number;
   }) {
     super(input.message);
     this.kind = input.kind;
     this.status = input.status;
     this.upstreamMessage = input.upstreamMessage;
+    this.retryAfterMs = input.retryAfterMs;
   }
 }
 

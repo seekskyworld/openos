@@ -117,6 +117,10 @@ export function startBridgeServer(options: CreateOptions = {}) {
     }
   });
 
+  // loopback 本地桥：放开 Node 默认 5 分钟 requestTimeout，
+  // 否则多轮 agent 生成的长 POST 会被 HTTP 层掐断
+  server.requestTimeout = 0;
+
   server.listen(env.port, env.host, () => {
     const address = server.address();
     const port =

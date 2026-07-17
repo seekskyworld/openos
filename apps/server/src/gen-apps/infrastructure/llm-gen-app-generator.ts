@@ -67,7 +67,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
 
   async suggest(
     input: SuggestPortInput,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<UntrustedSuggestion[]> {
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
@@ -83,7 +83,8 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
-        timeoutMs: 60_000,
+        timeoutMs: 90_000,
+        signal,
       },
       {
         model: llm.model,
@@ -110,7 +111,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
 
   async generate(
     input: GeneratePortInput,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
@@ -126,7 +127,8 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
-        timeoutMs: 120_000,
+        timeoutMs: 300_000,
+        signal,
       },
       {
         model: llm.model,

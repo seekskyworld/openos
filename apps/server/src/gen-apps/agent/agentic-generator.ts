@@ -169,8 +169,14 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
       result = await runAgent(
         task,
         async (messages, temperature, roundSignal) => {
+          // 流式生成：断流/重试由 llm-core 处理；roundSignal 直通取消
           const out = await coreGenerate(
-            { protocol: llm.protocol, target, timeoutMs: 90_000 },
+            {
+              protocol: llm.protocol,
+              target,
+              timeoutMs: 300_000,
+              signal: roundSignal,
+            },
             {
               model: llm.model,
               messages,
@@ -179,18 +185,11 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
               maxOutputTokens: 16_000,
             },
           );
-          if (roundSignal.aborted) {
-            throw Object.assign(new Error("aborted"), {
-              code: "aborted",
-              status: 499,
-              retryable: true,
-            });
-          }
           return out.text;
         },
         {
           maxRounds: settings.agentMaxRounds,
-          roundTimeoutMs: 90_000,
+          roundTimeoutMs: 300_000,
           onProgress,
         },
         signal,

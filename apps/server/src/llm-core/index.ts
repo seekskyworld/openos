@@ -1,4 +1,8 @@
-export { coreGenerate, type CoreCallOptions } from "./client.js";
+export {
+  coreGenerate,
+  isRetryableCoreError,
+  type CoreCallOptions,
+} from "./client.js";
 export { resolveWireProtocol } from "./protocols.js";
 export {
   CoreProtocolError,
