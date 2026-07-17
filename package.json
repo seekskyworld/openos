@@ -1,0 +1,35 @@
+{
+  "name": "openos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenOS — Generate Everything, Create Infinite. AI desktop OS shell that generates apps on demand (Electron + TypeScript).",
+  "license": "MIT",
+  "main": "apps/desktop/dist/main.cjs",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run desktop:dev",
+    "dev:server": "npm run dev -w @openos/server",
+    "dev:web": "npm run dev -w @openos/web",
+    "dev:web-stack": "concurrently -k -n server,web -c blue,green \"npm run dev:server\" \"npm run dev:web\"",
+    "build": "npm run build -w @openos/shared && npm run build -w @openos/server && npm run build -w @openos/web && npm run build -w @openos/desktop",
+    "build:shared": "npm run build -w @openos/shared",
+    "build:server": "npm run build -w @openos/server",
+    "build:web": "npm run build -w @openos/web",
+    "build:desktop": "npm run build -w @openos/desktop",
+    "desktop:dev": "npm run build:shared && npm run build:server && npm run build:desktop && node scripts/launch-desktop-dev.mjs",
+    "start:server": "npm run start -w @openos/server",
+    "typecheck": "npm run typecheck -w @openos/shared && npm run typecheck -w @openos/server && npm run typecheck -w @openos/web && npm run typecheck -w @openos/desktop"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^37.3.1",
+    "typescript": "^5.9.2"
+  }
+}

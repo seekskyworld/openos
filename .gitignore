@@ -1,0 +1,17 @@
+node_modules/
+dist/
+desktop-dist/
+web-dist/
+.server-dist/
+.env
+.env.local
+.DS_Store
+.cache/
+*.log
+.openos/
+.golutra/
+reference-images/
+apps/desktop/dist/
+apps/server/dist/
+apps/web/dist/
+packages/shared/dist/
