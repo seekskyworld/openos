@@ -1,6 +1,12 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { WindowState } from "./types";
-import { isUnderDock, type WindowManager } from "./useWindowManager";
+import {
+  isUnderDock,
+  type ResizeEdge,
+  type WindowManager,
+} from "./useWindowManager";
+
+const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 export type WindowScrollMode = "auto" | "y" | "x" | "both" | "none";
 
@@ -147,7 +153,7 @@ export function DesktopWindow({
         const target = event.target as HTMLElement;
         if (
           !target.closest(
-            ".window-title, input, textarea, select, button, a, label",
+            ".window-title, .resize-handle, input, textarea, select, button, a, label",
           )
         ) {
           event.preventDefault();
@@ -220,6 +226,17 @@ export function DesktopWindow({
       >
         {children}
       </div>
+
+      {/* macOS 式八向拉伸手柄（最大化/动画/显示桌面态不可拉伸） */}
+      {!win.maximized && !win.anim && !showDesktop
+        ? RESIZE_EDGES.map((edge) => (
+            <div
+              key={edge}
+              className={`resize-handle rh-${edge}`}
+              onMouseDown={(event) => manager.beginResize(id, edge, event)}
+            />
+          ))
+        : null}
     </section>
   );
 }

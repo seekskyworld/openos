@@ -633,8 +633,9 @@ select,
   box-shadow: var(--shadow-window);
   backdrop-filter: saturate(180%) blur(40px);
   -webkit-backdrop-filter: saturate(180%) blur(40px);
-  min-width: 420px;
-  min-height: 320px;
+  /* 与 useWindowManager 的 clamp 下限一致，避免拉伸时 CSS 与状态打架 */
+  min-width: 360px;
+  min-height: 240px;
   animation: window-in 180ms ease-out;
   transition:
     background 180ms ease,
@@ -709,6 +710,87 @@ select,
 
 .window.maximized {
   border-radius: 10px;
+}
+
+/* 拖拽/拉伸进行中：iframe 停接指针事件、全局禁选中，交互不被内容打断 */
+body.wm-interacting iframe {
+  pointer-events: none;
+}
+
+body.wm-interacting {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* macOS 式八向拉伸手柄：贴窗口边缘的透明热区（窗口 overflow:hidden，故全部内贴） */
+.resize-handle {
+  position: absolute;
+  z-index: 30;
+  background: transparent;
+}
+
+.rh-n {
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 5px;
+  cursor: ns-resize;
+}
+
+.rh-s {
+  bottom: 0;
+  left: 14px;
+  right: 14px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.rh-e {
+  top: 14px;
+  bottom: 14px;
+  right: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.rh-w {
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.rh-ne {
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.rh-sw {
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.rh-nw {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.rh-se {
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
 }
 
 /* 抽屉式最小化 / 还原（仿 macOS scale 到 Dock 缩略图）：

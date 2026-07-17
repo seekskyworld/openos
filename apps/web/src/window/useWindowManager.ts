@@ -45,6 +45,63 @@ function clampRect(rect: WindowRect, stage = stageBounds()): WindowRect {
   };
 }
 
+/** 八向拉伸边：n/s/e/w + 四角 */
+export type ResizeEdge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
+const RESIZE_CURSORS: Record<ResizeEdge, string> = {
+  n: "ns-resize",
+  s: "ns-resize",
+  e: "ew-resize",
+  w: "ew-resize",
+  ne: "nesw-resize",
+  sw: "nesw-resize",
+  nw: "nwse-resize",
+  se: "nwse-resize",
+};
+
+/** 按拉伸边计算新矩形：拖左/上时对边保持不动（macOS 行为） */
+function resizeRect(
+  orig: WindowRect,
+  edge: ResizeEdge,
+  dx: number,
+  dy: number,
+  stage = stageBounds(),
+): WindowRect {
+  const minW = 360;
+  const minH = 240;
+  let { x, y, w, h } = orig;
+  if (edge.includes("e")) w = orig.w + dx;
+  if (edge.includes("w")) {
+    w = orig.w - dx;
+    x = orig.x + dx;
+  }
+  if (edge.includes("s")) h = orig.h + dy;
+  if (edge.includes("n")) {
+    h = orig.h - dy;
+    y = orig.y + dy;
+  }
+  if (w < minW) {
+    if (edge.includes("w")) x = orig.x + orig.w - minW;
+    w = minW;
+  }
+  if (h < minH) {
+    if (edge.includes("n")) y = orig.y + orig.h - minH;
+    h = minH;
+  }
+  // 舞台边界：越界收边而不是平移
+  if (x < STAGE_PAD) {
+    w -= STAGE_PAD - x;
+    x = STAGE_PAD;
+  }
+  if (y < STAGE_PAD) {
+    h -= STAGE_PAD - y;
+    y = STAGE_PAD;
+  }
+  w = Math.min(w, stage.width - STAGE_PAD - x);
+  h = Math.min(h, stage.height - STAGE_PAD - y);
+  return { x, y, w: Math.max(minW, w), h: Math.max(minH, h) };
+}
+
 function maximizedRect(stage = stageBounds()): WindowRect {
   // 最大化仍停在 Dock 上方，不被图标栏挡住
   const usableH = Math.max(240, stage.dockTop - STAGE_PAD * 2);
@@ -145,6 +202,14 @@ export function useWindowManager(defaults: WindowDefaults[]) {
     origY: number;
   } | null>(null);
 
+  const resizeRef = useRef<{
+    id: string;
+    edge: ResizeEdge;
+    startX: number;
+    startY: number;
+    orig: WindowRect;
+  } | null>(null);
+
   useEffect(() => {
     return () => {
       for (const timer of Object.values(animTimers.current)) {
@@ -176,6 +241,23 @@ export function useWindowManager(defaults: WindowDefaults[]) {
 
   useEffect(() => {
     function onMove(event: MouseEvent) {
+      const resize = resizeRef.current;
+      if (resize) {
+        const dx = event.clientX - resize.startX;
+        const dy = event.clientY - resize.startY;
+        setWindows((prev) => {
+          const win = prev[resize.id];
+          if (!win || win.maximized || win.minimized || win.anim) return prev;
+          return {
+            ...prev,
+            [resize.id]: {
+              ...win,
+              ...resizeRect(resize.orig, resize.edge, dx, dy),
+            },
+          };
+        });
+        return;
+      }
       const drag = dragRef.current;
       if (!drag) return;
       const dx = event.clientX - drag.startX;
@@ -198,6 +280,11 @@ export function useWindowManager(defaults: WindowDefaults[]) {
 
     function onUp() {
       dragRef.current = null;
+      if (resizeRef.current) {
+        resizeRef.current = null;
+        document.body.style.cursor = "";
+      }
+      document.body.classList.remove("wm-interacting");
     }
 
     window.addEventListener("mousemove", onMove);
@@ -453,6 +540,30 @@ export function useWindowManager(defaults: WindowDefaults[]) {
         origX: win.x,
         origY: win.y,
       };
+      // 拖拽/拉伸期间禁用 iframe 指针事件，防止滑入 Runner 内容吞掉 mousemove
+      document.body.classList.add("wm-interacting");
+    },
+    [focus],
+  );
+
+  const beginResize = useCallback(
+    (id: string, edge: ResizeEdge, event: React.MouseEvent) => {
+      if (event.button !== 0) return;
+      const win = windowsRef.current[id];
+      if (!win || win.maximized || win.minimized || win.anim) return;
+      event.preventDefault();
+      event.stopPropagation();
+      focus(id);
+      resizeRef.current = {
+        id,
+        edge,
+        startX: event.clientX,
+        startY: event.clientY,
+        orig: { x: win.x, y: win.y, w: win.w, h: win.h },
+      };
+      // 拉伸期间指针可能滑出手柄区域——用 body 光标锁定形状
+      document.body.style.cursor = RESIZE_CURSORS[edge];
+      document.body.classList.add("wm-interacting");
     },
     [focus],
   );
@@ -495,6 +606,7 @@ export function useWindowManager(defaults: WindowDefaults[]) {
     minimize,
     toggleMaximize,
     beginDrag,
+    beginResize,
     isVisible,
     isRunning,
     revealDesktop,
