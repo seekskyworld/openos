@@ -94,7 +94,8 @@ export function validateArtifact(html: string): ValidationIssue[] {
     }
   }
 
-  // V3: 外链资源
+  // V3: 外链资源——只拦「加载位置」的外链；URL 作为纯文本数据（浏览器书签、
+  // 示例文案等）是合法的，CSP 本就兜底，不再一刀切
   const externalPatterns: Array<{ re: RegExp; label: string }> = [
     { re: /<script\b[^>]*\bsrc\s*=/i, label: "script src" },
     { re: /<link\b[^>]*\bhref\s*=/i, label: "link href" },
@@ -102,7 +103,9 @@ export function validateArtifact(html: string): ValidationIssue[] {
     { re: /\bXMLHttpRequest\b/i, label: "XMLHttpRequest" },
     { re: /\bWebSocket\s*\(/i, label: "WebSocket" },
     { re: /\bimport\s*\(/i, label: "dynamic import(" },
-    { re: /https?:\/\/[^\s"'`]+/i, label: "http(s) URL" },
+    { re: /(?:\bsrc|\bsrcset)\s*=\s*["']?https?:\/\//i, label: "外链 src" },
+    { re: /url\(\s*['"]?https?:\/\//i, label: "css url()" },
+    { re: /@import\s+['"]?https?:\/\//i, label: "css @import" },
   ];
   for (const { re, label } of externalPatterns) {
     if (re.test(source)) {
@@ -115,6 +118,17 @@ export function validateArtifact(html: string): ValidationIssue[] {
       });
       break; // 同类问题报一次即可
     }
+  }
+  // 外链 <a href>：沙箱禁导航，点击无任何反应——警告级，提示改 data-href
+  const deadLink = source.match(/<a\b[^>]*\bhref\s*=\s*["']?https?:\/\//i);
+  if (deadLink) {
+    issues.push({
+      severity: "warning",
+      code: "dead_external_link",
+      message:
+        "沙箱禁止页面导航，<a href=\"http…\"> 点击不会有任何反应。请改用 <a data-href=\"…\"> + 事件委托（配合 OpenOS.generate）或移除链接。",
+      excerpt: excerptAround(source, deadLink.index ?? 0),
+    });
   }
 
   // V5: 交互性启发

@@ -176,6 +176,20 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
   /** 流式生成的中断控制（windowId → abort） */
   const streamAborts = useRef<Map<string, AbortController>>(new Map());
 
+  /** 流式失败时窗口内错误页（启动台已关，横幅不可见——错误必须留在窗口里） */
+  const buildErrorPage = (name: string, message: string) => {
+    const esc = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<!DOCTYPE html><html translate="no"><head><meta charset="utf-8"></head>
+<body style="margin:0;display:grid;place-items:center;min-height:100vh;font-family:-apple-system,system-ui,sans-serif;background:#f5f5f7;color:#1d1d1f">
+<div style="text-align:center;max-width:420px;padding:24px">
+<div style="font-size:44px">⚠️</div>
+<h2 style="margin:12px 0 8px;font-size:17px">「${esc(name)}」生成失败</h2>
+<p style="margin:0;font-size:13px;color:#6e6e73;word-break:break-all">${esc(message)}</p>
+<p style="margin:14px 0 0;font-size:12px;color:#6e6e73">关闭窗口后可在启动台重新点击生成</p>
+</div></body></html>`;
+  };
+
   const patchRunning = useCallback(
     (windowId: string, patch: Partial<RunningGenApp>) => {
       setRunning((prev) =>
@@ -308,14 +322,55 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
         );
         finishWithDraft(draft, false);
       } catch (err: unknown) {
-        // 流式失败：撤掉预览窗口
-        setRunning((prev) => prev.filter((r) => r.windowId !== windowId));
-        host.closeWindow(windowId);
-        if (err instanceof GenAppClientError) {
-          setError(err);
-          setPhase("error");
-        } else {
+        const userCancelled =
+          err instanceof DOMException && err.name === "AbortError";
+        if (userCancelled) {
+          // 用户点红灯取消：requestClose 已撤窗
           setPhase("idle");
+        } else if (
+          err instanceof GenAppClientError &&
+          /Stream endpoint unavailable/.test(err.message)
+        ) {
+          // 旧服务端无流式端点：撤预览窗，退回非流式
+          setRunning((prev) => prev.filter((r) => r.windowId !== windowId));
+          host.closeWindow(windowId);
+          try {
+            startProgressPoll(idempotencyKey);
+            const draft = await clientRef.current.generateDraft(
+              suggestion,
+              queryRef.current,
+              idempotencyKey,
+              new AbortController().signal,
+            );
+            finishWithDraft(draft, false);
+          } catch (fallbackErr: unknown) {
+            if (fallbackErr instanceof GenAppClientError) {
+              setError(fallbackErr);
+              setPhase("error");
+            } else {
+              setPhase("idle");
+            }
+          }
+        } else {
+          // 流式失败：窗口保留并显示错误页（红灯直接关闭）
+          const message =
+            err instanceof GenAppClientError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : String(err);
+          patchRunning(windowId, {
+            status: "ready",
+            mode: "installed", // 红灯走直接关闭分支，不触发安装
+            html: buildErrorPage(suggestion.name, message),
+            streamPhase: undefined,
+          });
+          if (err instanceof GenAppClientError) {
+            setError(err);
+            setPhase("error");
+          } else {
+            setPhase("idle");
+          }
         }
       } finally {
         stopProgressPoll();

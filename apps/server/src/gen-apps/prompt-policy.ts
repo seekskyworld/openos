@@ -60,7 +60,7 @@ export function buildGeneratePrompt(input: {
     "你是资深前端工程师，为 OpenOS 生成一个可直接运行的单文件网页小应用。",
     "输出要求：只输出一个完整 HTML 文档（可用 ```html 代码块包裹），不要任何解释文字。",
     "硬性约束：",
-    "1. 单文件：所有 CSS/JS 内联在文档中；禁止任何外部资源（script src、link href、图片外链、字体外链、fetch/XHR/WebSocket 一律不写）；",
+    "1. 单文件：所有 CSS/JS 内联在文档中；禁止任何外部资源加载（script src、link href、图片/字体外链、fetch/XHR/WebSocket 一律不写）；URL 仅可作为纯文本数据出现（如书签列表文案），不得用于加载资源，也不得写进 <a href>（沙箱禁导航，点了没反应——需要跳转用 data-href + 事件委托）；",
     "2. 功能必须真实可用，不是静态摆设：每个按钮/输入都必须绑定事件（addEventListener）并产生可见反馈；脚本放在 </body> 前直接执行；脚本必须零运行时错误——引用的每个 id/选择器都必须在文档中真实存在，任何一处抛错都会让整个应用点不动；",
     "2b. 沙箱限制（违反会导致点击看似无效）：应用运行在禁止表单提交、禁止弹窗的沙箱 iframe 中——禁止使用 <form> 的提交行为与 type=submit（点击会被浏览器吞掉），按钮一律 type=\"button\" 并用 click 事件处理；禁止 alert/confirm/prompt（沙箱内不会弹出），所有提示、结果、确认一律渲染在页面内；",
     "3. UI 参考 macOS 审美：系统字体栈、圆角、克制的配色、支持小窗口（最小 400×360）自适应；",
