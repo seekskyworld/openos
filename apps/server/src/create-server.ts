@@ -93,12 +93,13 @@ export function startBridgeServer(options: CreateOptions = {}) {
       generator: genAppsGenerator,
       repository: new SqliteGenAppRepository(getOpenOsDatabase(env)),
       defaultSuggestionCount: () => loadGenAppsSettings(env).suggestionCount,
-      // agent 循环整体预算随轮次伸缩（无限模式 10 分钟兜底）；fast 路径 90s
+      // 总预算只防失控（卡死由 llm-core idle 超时负责）：
+      // agentic 随轮次伸缩；fast 单发也给足慢速上游空间
       generateTimeoutMs: () => {
         const s = loadGenAppsSettings(env);
         return s.generationMode === "agentic"
           ? agenticBudgetMs(s.agentMaxRounds)
-          : 90_000;
+          : 600_000;
       },
     }),
     sendJson,

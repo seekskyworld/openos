@@ -186,11 +186,13 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
         task,
         async (messages, temperature, roundSignal) => {
           // 流式生成：断流/重试由 llm-core 处理；roundSignal 直通取消
+          // 慢速上游单轮可达 6-8 分钟；卡死由 llm-core idle 超时(60s)负责，
+          // 这里的总预算只防失控，不应掐断仍在活跃流动的流
           const out = await coreGenerate(
             {
               protocol: llm.protocol,
               target,
-              timeoutMs: 300_000,
+              timeoutMs: 600_000,
               signal: roundSignal,
               onDelta: input.onDelta,
             },
@@ -206,7 +208,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
         },
         {
           maxRounds: settings.agentMaxRounds,
-          roundTimeoutMs: 300_000,
+          roundTimeoutMs: 600_000,
           onProgress,
         },
         signal,

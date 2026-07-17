@@ -53,10 +53,14 @@ export function clampAgentMaxRounds(value: unknown): number {
   return Math.min(10, Math.max(1, n));
 }
 
-/** agentic 总时长预算：按轮次伸缩；无限模式给 10 分钟兜底 */
+/**
+ * agentic 总时长预算：按轮次伸缩；无限模式 15 分钟兜底。
+ * 流式后网关不再限时，单轮慢速上游（大制品 4-6 分钟）也应能跑完；
+ * 断流卡死由 llm-core idle 超时（60s）负责，总预算只防失控循环。
+ */
 export function agenticBudgetMs(agentMaxRounds: number): number {
-  if (agentMaxRounds === 0) return 600_000;
-  return Math.min(600_000, 240_000 + Math.max(0, agentMaxRounds - 3) * 60_000);
+  if (agentMaxRounds === 0) return 1_500_000;
+  return Math.min(1_500_000, 720_000 + Math.max(0, agentMaxRounds - 3) * 120_000);
 }
 
 export type CreativityTier = "system" | "appstore" | "indie" | "fantasy";

@@ -133,7 +133,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
-        timeoutMs: 300_000,
+        timeoutMs: 600_000,
         signal,
         onDelta: input.onDelta,
       },
