@@ -716,12 +716,17 @@ export function SettingsApp({ onClose, onSaved }: Props) {
             {genSettings.generationMode === "agentic" ? (
               <label className="field">
                 <span>
-                  {t("genapps.rounds")} · <strong>{genSettings.agentMaxRounds}</strong>
+                  {t("genapps.rounds")} ·{" "}
+                  <strong>
+                    {genSettings.agentMaxRounds === 0
+                      ? "∞"
+                      : genSettings.agentMaxRounds}
+                  </strong>
                 </span>
                 <input
                   type="range"
-                  min={1}
-                  max={4}
+                  min={0}
+                  max={10}
                   step={1}
                   value={genSettings.agentMaxRounds}
                   onChange={(e) =>

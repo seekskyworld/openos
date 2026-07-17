@@ -74,7 +74,13 @@ export async function runAgent<T>(
   options: AgentCoreOptions,
   signal: AbortSignal,
 ): Promise<AgentRunResult<T>> {
-  const maxRounds = Math.min(4, Math.max(1, Math.floor(options.maxRounds) || 1));
+  // 无限模式（0/Infinity）：靠模型自判完成 + 调用方总时长兜底；安全上限 50 防失控
+  const SAFETY_CAP = 50;
+  const requested = options.maxRounds;
+  const unlimited = requested === 0 || !Number.isFinite(requested);
+  const maxRounds = unlimited
+    ? SAFETY_CAP
+    : Math.min(SAFETY_CAP, Math.max(1, Math.floor(requested) || 1));
   const rounds: AgentTurn<T>[] = [];
   let previous: T | null = null;
 
@@ -109,6 +115,17 @@ export async function runAgent<T>(
       cleanup();
     }
     const durationMs = Date.now() - started;
+
+    // 模型自判完成：修复轮输出「完成标记」→ 提前结束，采用最后可用版本
+    if (round > 0 && task.detectDone?.(rawText)) {
+      const acceptedArtifact = pickDegraded(rounds, task.canDegrade?.bind(task));
+      if (acceptedArtifact !== null) {
+        rounds.push({ round, artifact: null, issues: [], durationMs });
+        options.onProgress?.({ phase: "done", outcome: "accepted" });
+        return { artifact: acceptedArtifact, rounds, outcome: "accepted" };
+      }
+      // 没有任何可用版本却宣布完成：视为无效输出，继续循环
+    }
 
     options.onProgress?.({ phase: "checking", round });
 

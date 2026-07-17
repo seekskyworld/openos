@@ -52,6 +52,7 @@ import { GenAppsService } from "./gen-apps/gen-apps-service.js";
 import { GenAppsController } from "./gen-apps/http/gen-apps-controller.js";
 import { DeterministicFakeGenerator } from "./gen-apps/infrastructure/deterministic-fake-generator.js";
 import {
+  agenticBudgetMs,
   loadGenAppsSettings,
   saveGenAppsSettings,
 } from "./gen-apps/gen-app-settings.js";
@@ -92,9 +93,13 @@ export function startBridgeServer(options: CreateOptions = {}) {
       generator: genAppsGenerator,
       repository: new SqliteGenAppRepository(getOpenOsDatabase(env)),
       defaultSuggestionCount: () => loadGenAppsSettings(env).suggestionCount,
-      // agent 循环整体预算 240s；fast 路径会提前结束
-      generateTimeoutMs: () =>
-        loadGenAppsSettings(env).generationMode === "agentic" ? 240_000 : 90_000,
+      // agent 循环整体预算随轮次伸缩（无限模式 10 分钟兜底）；fast 路径 90s
+      generateTimeoutMs: () => {
+        const s = loadGenAppsSettings(env);
+        return s.generationMode === "agentic"
+          ? agenticBudgetMs(s.agentMaxRounds)
+          : 90_000;
+      },
     }),
     sendJson,
     readBody,

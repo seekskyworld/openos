@@ -127,13 +127,52 @@ async function caseAbort() {
   assert(threw, "abort throws");
 }
 
+async function caseModelAccepted() {
+  // 修复轮输出完成标记 → accepted，采用最后可编译版本
+  let n = 0;
+  const events: string[] = [];
+  const result = await runAgent(
+    makeTask({
+      canDegrade: (a) => a === BAD,
+      detectDone: (raw) => raw.trim() === "DONE!",
+    }),
+    async () => {
+      n++;
+      return n === 1 ? BAD : "DONE!";
+    },
+    { maxRounds: 4, roundTimeoutMs: 5_000, onProgress: (e) => events.push(e.phase) },
+    new AbortController().signal,
+  );
+  assert(result.outcome === "accepted", "accepted outcome");
+  assert(result.artifact === BAD, "accepted picks last compilable");
+  assert(n === 2, "stopped right after done marker");
+}
+
+async function caseUnlimitedRounds() {
+  // maxRounds=0（无限）：超过旧上限 4 轮后仍继续，第 6 轮修好
+  let n = 0;
+  const result = await runAgent(
+    makeTask(),
+    async () => {
+      n++;
+      return n < 6 ? BAD : GOOD;
+    },
+    { maxRounds: 0, roundTimeoutMs: 5_000 },
+    new AbortController().signal,
+  );
+  assert(result.outcome === "clean", "unlimited clean");
+  assert(result.rounds.length === 6, "unlimited ran 6 rounds");
+}
+
 async function main() {
   await caseClean();
   await caseFixThenPass();
   await caseDegradedWarnOnly();
   await caseFailed();
   await caseAbort();
-  console.log("agent-core smoke: ALL PASS");
+  await caseModelAccepted();
+  await caseUnlimitedRounds();
+  console.log("agent-core smoke: ALL PASS (7/7)");
 }
 
 void main();

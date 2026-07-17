@@ -25,7 +25,7 @@ export type GenAppsPersistedSettings = {
   appLanguage: GenAppLanguage;
   /** fast=单发；agentic=校验+修复循环 */
   generationMode: GenerationMode;
-  /** agentic 最大轮次（含首轮），1-4 */
+  /** agentic 最大轮次（含首轮）：1-10，0=无限（模型可自判提前完成，受总时长兜底） */
   agentMaxRounds: number;
 };
 
@@ -49,7 +49,14 @@ export function clampMode(value: unknown): GenerationMode {
 export function clampAgentMaxRounds(value: unknown): number {
   const n = typeof value === "number" ? Math.round(value) : Number.NaN;
   if (!Number.isFinite(n)) return DEFAULT_GEN_APPS_SETTINGS.agentMaxRounds;
-  return Math.min(4, Math.max(1, n));
+  if (n <= 0) return 0; // 0 = 无限
+  return Math.min(10, Math.max(1, n));
+}
+
+/** agentic 总时长预算：按轮次伸缩；无限模式给 10 分钟兜底 */
+export function agenticBudgetMs(agentMaxRounds: number): number {
+  if (agentMaxRounds === 0) return 600_000;
+  return Math.min(600_000, 240_000 + Math.max(0, agentMaxRounds - 3) * 60_000);
 }
 
 export type CreativityTier = "system" | "appstore" | "indie" | "fantasy";

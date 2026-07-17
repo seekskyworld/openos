@@ -49,6 +49,8 @@ export function createHtmlAppTask(input: HtmlAppTaskInput): AgentTask<string> {
         list,
         "",
         "只输出修复后的完整 HTML 文档，不要解释。不要输出 diff 或片段。",
+        "提前完成选项：如果你仔细判断后认为上一轮版本其实已经可用（上述问题属于误报、或不影响实际使用且无法进一步改进），不要输出 HTML，只输出一行：",
+        "OPENOS_DONE",
         "",
         "上一轮完整 HTML：",
         "```html",
@@ -56,6 +58,12 @@ export function createHtmlAppTask(input: HtmlAppTaskInput): AgentTask<string> {
         "```",
       ].join("\n");
       return [{ role: "user", content: user }];
+    },
+
+    detectDone(raw: string): boolean {
+      // 短输出 + 完成标记 = 模型宣布提前结束（长输出里出现标记视为正文，避免误判）
+      const trimmed = raw.trim();
+      return trimmed.length < 200 && /\bOPENOS_DONE\b/.test(trimmed);
     },
 
     extract(raw: string, previous: string | null): string | null {

@@ -28,7 +28,13 @@ export type AgentTurn<T> = {
   durationMs: number;
 };
 
-export type AgentOutcome = "clean" | "degraded" | "failed";
+/**
+ * clean    = 校验全过
+ * accepted = 模型自判完成（宣布提前结束，采用最后可用版本）
+ * degraded = 预算耗尽，降级采用最后可编译版本
+ * failed   = 无任何可用版本（抛错，不出现在成功结果里）
+ */
+export type AgentOutcome = "clean" | "accepted" | "degraded" | "failed";
 
 export type AgentRunResult<T> = {
   artifact: T;
@@ -71,6 +77,13 @@ export interface AgentTask<T> {
    */
   canDegrade?(artifact: T): boolean;
 
+  /**
+   * 模型自判完成（可选）：检测修复轮输出是否为「宣布完成」标记而非新制品。
+   * 命中时循环提前结束，采用最后一个可用版本（warning-only 优先，其次 canDegrade）。
+   * 修复提示词里应同步告知模型该标记的写法。
+   */
+  detectDone?(raw: string): boolean;
+
   /** 首轮采样温度（任务按自己的 creativity 策略给出） */
   readonly firstTemperature: number;
   /** 修复轮温度（默认 0.2；收敛任务可覆盖） */
@@ -84,7 +97,11 @@ export type AgentGenerateFn = (
 ) => Promise<string>;
 
 export type AgentCoreOptions = {
-  /** 最大轮次（首轮+修复轮），clamp 1-4 */
+  /**
+   * 最大轮次（首轮+修复轮）。
+   * Infinity/0 = 无限模式：靠模型自判完成 + 调用方总时长兜底；
+   * 内置安全上限 50 轮防失控。
+   */
   maxRounds: number;
   /** 单轮超时 ms */
   roundTimeoutMs: number;
