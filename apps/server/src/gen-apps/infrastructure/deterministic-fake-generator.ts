@@ -1,3 +1,7 @@
+import {
+  createFastGenAppSuggestionSeeds,
+  type FastGenAppSuggestionInput,
+} from "@openos/shared";
 import type {
   ContinuePortInput,
   GenAppGenerator,
@@ -6,19 +10,24 @@ import type {
 } from "../ports.js";
 import type { UntrustedArtifact, UntrustedSuggestion } from "../domain.js";
 
-const SUGGESTION_POOL = [
-  { suffix: "计算器", emoji: "🧮", theme: "orange", desc: "四则运算与百分比" },
-  { suffix: "记事本", emoji: "📝", theme: "blue", desc: "快速记录想法" },
-  { suffix: "计时器", emoji: "⏱️", theme: "green", desc: "倒计时与秒表" },
-  { suffix: "清单", emoji: "✅", theme: "teal", desc: "待办与勾选" },
-  { suffix: "转换器", emoji: "🔁", theme: "purple", desc: "单位换算" },
-  { suffix: "取色器", emoji: "🎨", theme: "pink", desc: "颜色预览与代码" },
-] as const;
+function escapeMarkup(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
-const CALCULATOR_MARKUP = `<main class="os-app os-column">
-  <header class="os-toolbar" id="app-header"><strong class="os-toolbar-title">计算器</strong><span class="os-badge">Local</span></header>
+function buildDeterministicMarkup(input: GeneratePortInput): string {
+  const name = escapeMarkup(input.name.trim() || "Generated App");
+  const description = escapeMarkup(input.description.trim() || input.query.trim());
+  const query = escapeMarkup(input.query.trim());
+  return `<main class="os-app os-column">
+  <header class="os-toolbar" id="app-header"><strong class="os-toolbar-title">${name}</strong><span class="os-badge">Fake</span></header>
   <section class="os-main os-fill" id="calculator-panel">
     <div class="os-card os-column" id="calculator">
+      <p id="app-description" class="os-caption">${description}</p>
       <output id="display" class="os-heading" data-expression="0">0</output>
       <div class="os-grid" id="keys">
         <button id="key-clear" class="os-button os-danger" type="button" data-action="calc.clear" data-target="display">AC</button>
@@ -40,41 +49,50 @@ const CALCULATOR_MARKUP = `<main class="os-app os-column">
         <button id="key-plus" class="os-button" type="button" data-action="calc.input" data-target="display" data-value="+">+</button>
       </div>
       <button id="ai-explain" class="os-button" type="button" data-action="ai.patch" data-target="calculator-panel" data-prompt="解释当前计算器的使用方式">AI 说明</button>
+      <p id="source-query" class="os-caption">${query}</p>
     </div>
   </section>
 </main>`;
+}
 
 export class DeterministicFakeGenerator implements GenAppGenerator {
+  constructor(
+    private readonly suggestionSettings: () => Pick<
+      FastGenAppSuggestionInput,
+      "language" | "style"
+    > = () => ({}),
+  ) {}
+
   async suggest(
     input: SuggestPortInput,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<UntrustedSuggestion[]> {
-    const base = input.query.trim();
-    return SUGGESTION_POOL.slice(0, input.count).map((item) => ({
-      name: `${base}${item.suffix}`,
-      description: item.desc,
-      iconEmoji: item.emoji,
-      iconTheme: item.theme,
-    }));
+    signal.throwIfAborted();
+    return createFastGenAppSuggestionSeeds({
+      ...input,
+      ...this.suggestionSettings(),
+    });
   }
 
   async generate(
     input: GeneratePortInput,
     _signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
+    const markup = buildDeterministicMarkup(input);
     if (input.onDelta) {
       input.onPhase?.({ phase: "generating" });
       const chunkSize = 320;
-      for (let index = 0; index < CALCULATOR_MARKUP.length; index += chunkSize) {
-        input.onDelta(CALCULATOR_MARKUP.slice(index, index + chunkSize));
+      for (let index = 0; index < markup.length; index += chunkSize) {
+        input.onDelta(markup.slice(index, index + chunkSize));
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
     return {
-      html: CALCULATOR_MARKUP,
+      html: markup,
       provider: "fake",
       model: "deterministic-v2",
-      interactionMode: "hybrid",
+      interactionMode:
+        this.suggestionSettings().style === "fantasy" ? "improv" : "hybrid",
     };
   }
 

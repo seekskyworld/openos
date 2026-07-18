@@ -1091,3 +1091,4 @@ export const DEFAULT_BRIDGE_HOST = "127.0.0.1";
 export const DEFAULT_BRIDGE_PORT = 47821;
 export * from "./gen-apps.js";
 export * from "./gen-app-runtime.js";
+export * from "./gen-app-suggestions.js";

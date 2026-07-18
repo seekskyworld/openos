@@ -31,7 +31,7 @@
 - iMessage 风格深色聊天界面，多会话管理，SQLite 持久化，会话可删除
 
 ### 🪄 Gen Apps：搜索即生成应用
-- 启动台输入关键词 → 大模型单轮生成 N 个候选（图标 + 名字，数量 / 风格可调）
+- 启动台输入关键词 → 浏览器按已加载设置同步生成完整候选；Bridge API 为其他调用方复用同一策略（均不等待模型）
 - 点击候选 → **Coding Agent 多轮生成**：生成 → 本地校验（语法 / 外链 / 交互性 / 体积）→ 错误喂回 → 修复，直到可用或按策略降级
 - 生成的应用运行在 CSP + sandbox iframe 中（无网络、无宿主访问）；关闭即安装进启动台，二次打开直接读库、不再调模型
 - 生成偏好滑杆四档：系统工具 → 商店应用 → 独立开发 → 天马行空（同时映射提示词风格与采样温度）
@@ -105,7 +105,7 @@ npm run desktop:dev
 | `GET /api/health` · `GET /api/bootstrap` | 健康检查 / 运行时信息 |
 | `POST /api/chat` | Sir 对话 |
 | `GET/POST /api/threads*` | 会话与消息（SQLite） |
-| `POST /api/gen-apps/suggestions` | 生成应用候选（单轮） |
+| `POST /api/gen-apps/suggestions` | 毫秒级生成应用候选（不调用 LLM） |
 | `POST /api/gen-apps/drafts` | Coding Agent 生成应用（多轮） |
 | `POST /api/gen-apps/:id/install` · `/launch` · `DELETE /:id` | 安装 / 打开 / 删除 |
 | `GET /api/gen-apps/progress/:key` | 生成进度轮询 |

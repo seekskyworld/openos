@@ -8,8 +8,11 @@ import type {
   GenAppPatchBatch,
   GenAppSuggestion,
   GenAppSummary,
+  GenAppsSettings,
 } from "@openos/shared";
 import {
+  createFastGenAppSuggestions,
+  fastSuggestionStyle,
   GEN_APP_FORMAT,
   GEN_APP_LEGACY_FORMAT,
   GEN_APP_LIMITS,
@@ -19,72 +22,30 @@ import {
   HttpGenAppsClient,
   type GenAppsClient,
 } from "./client.js";
-import { debounceWithThrottle } from "../utils/rate-control.js";
+import {
+  flushPendingGenAppsSettings,
+  getGenAppsSettingsSnapshot,
+  hydrateGenAppsSettings,
+  subscribeGenAppsSettings,
+} from "./settings-sync.js";
 
 /**
  * GenAppWorkspace：前端主接缝模块。
- * 隐藏：搜索防抖 / AbortController / 请求序号防旧覆盖新 /
+ * 隐藏：同步候选策略与设置快照 /
  * 生成、草稿运行、关闭安装状态机 / 删除同步。
  * Launcher 与 App.tsx 只消费 view + 动作方法，不直接调 CRUD。
  */
 
-const SUGGEST_DEBOUNCE_MS = 500;
-/** 节流保底：持续输入超过该间隔仍强制请求一次 */
-const SUGGEST_MAX_WAIT_MS = 2000;
-
-const LOCAL_APP_CATALOG: Array<{
-  name: string;
-  description: string;
-  iconEmoji: string;
-  iconTheme: GenAppSummary["iconTheme"];
-  keywords: string;
-}> = [
-  { name: "计算器", description: "快速计算与换算", iconEmoji: "🧮", iconTheme: "orange", keywords: "计算 数学 calculator" },
-  { name: "备忘录", description: "记录想法与清单", iconEmoji: "📝", iconTheme: "orange", keywords: "笔记 记录 备忘 note todo 清单" },
-  { name: "专注计时", description: "番茄钟与倒计时", iconEmoji: "⏱️", iconTheme: "red", keywords: "时间 时钟 计时 番茄 timer focus" },
-  { name: "单位换算", description: "长度重量温度换算", iconEmoji: "🔁", iconTheme: "purple", keywords: "换算 单位 convert conversion" },
-  { name: "天气", description: "城市天气与预报", iconEmoji: "🌤️", iconTheme: "blue", keywords: "天气 weather 气温 预报" },
-  { name: "词典", description: "查词、释义与例句", iconEmoji: "📖", iconTheme: "graphite", keywords: "词典 翻译 单词 dictionary translate" },
-  { name: "色板", description: "配色与颜色代码", iconEmoji: "🎨", iconTheme: "pink", keywords: "颜色 色板 取色 color palette" },
-  { name: "汇率", description: "常用货币快速换算", iconEmoji: "💱", iconTheme: "green", keywords: "汇率 货币 外汇 currency money" },
-];
-
-function localSuggestions(query: string): GenAppSuggestion[] {
-  const normalized = query.trim().toLocaleLowerCase();
-  const matches = LOCAL_APP_CATALOG.filter((item) =>
-    `${item.name} ${item.description} ${item.keywords}`.toLocaleLowerCase().includes(normalized),
-  ).slice(0, 3);
-  if (matches.length === 0) {
-    let hash = 0;
-    for (const char of normalized) hash = Math.imul(hash ^ char.codePointAt(0)!, 16777619);
-    return [{
-      id: `local-exact-${(hash >>> 0).toString(36)}`,
-      name: query.trim().slice(0, 60),
-      description: "按当前需求生成应用",
-      iconEmoji: "✨",
-      iconTheme: "blue",
-    }];
-  }
-  return matches.map((item) => ({
-    id: `local-${item.name}`,
-    name: item.name,
-    description: item.description,
-    iconEmoji: item.iconEmoji,
-    iconTheme: item.iconTheme,
-  }));
-}
-
-function mergeSuggestions(
-  immediate: GenAppSuggestion[],
-  remote: GenAppSuggestion[],
+function localSuggestions(
+  query: string,
+  settings: GenAppsSettings,
 ): GenAppSuggestion[] {
-  const names = new Set<string>();
-  return [...immediate, ...remote].filter((item) => {
-    const key = item.name.trim().toLocaleLowerCase();
-    if (!key || names.has(key)) return false;
-    names.add(key);
-    return true;
-  }).slice(0, GEN_APP_LIMITS.suggestionCountMax);
+  return createFastGenAppSuggestions({
+    query,
+    count: settings.suggestionCount,
+    language: settings.appLanguage,
+    style: fastSuggestionStyle(settings.creativity),
+  });
 }
 
 function applyMarkupPatch(markup: string, patch: GenAppPatchBatch): string {
@@ -148,7 +109,7 @@ export type GenAppWorkspaceView = {
   installed: GenAppSummary[];
   suggestions: GenAppSuggestion[];
   pendingSuggestionId: string | null;
-  phase: "idle" | "suggesting" | "generating" | "installing" | "error";
+  phase: "idle" | "generating" | "installing" | "error";
   /** agentic 进度 phase（generating/checking/fixing/done/unknown） */
   agentPhase: string | null;
   error: GenAppClientError | null;
@@ -173,11 +134,10 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
   const [running, setRunning] = useState<RunningGenApp[]>([]);
 
   const queryRef = useRef("");
-  const localSuggestionsRef = useRef<GenAppSuggestion[]>([]);
+  const suggestionSettingsRef = useRef(
+    getGenAppsSettingsSnapshot().settings,
+  );
   const runningRef = useRef<RunningGenApp[]>([]);
-  const suggestAbort = useRef<AbortController | null>(null);
-  /** 单调请求序号：旧响应不得覆盖新响应 */
-  const suggestSeq = useRef(0);
   const progressTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -225,85 +185,47 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     }
   }, []);
 
-  /** 实际发起 suggest 请求（由防抖/节流包装触发） */
-  const fireSuggest = useCallback((trimmed: string) => {
-    suggestAbort.current?.abort();
-    const seq = ++suggestSeq.current;
-    const abort = new AbortController();
-    suggestAbort.current = abort;
-    setPhase("suggesting");
-    setError(null);
-    clientRef.current
-      .suggest(trimmed, undefined, abort.signal)
-      .then((result) => {
-        if (seq !== suggestSeq.current) return; // 旧响应丢弃
-        setSuggestions(mergeSuggestions(localSuggestionsRef.current, result));
-        setPhase("idle");
-      })
-      .catch((err: unknown) => {
-        if (abort.signal.aborted || seq !== suggestSeq.current) return;
-        if (localSuggestionsRef.current.length > 0) {
-          setSuggestions(localSuggestionsRef.current);
-          setError(null);
-          setPhase("idle");
-          return;
-        }
-        setSuggestions([]);
-        if (err instanceof GenAppClientError) {
-          setError(err);
-          setPhase("error");
-        } else {
-          setPhase("idle");
-        }
-      });
-  }, []);
-
-  /** 防抖为主（停顿 500ms 发起）+ 节流保底（连续输入 2s 强制发一次） */
-  const debouncedSuggest = useMemo(
-    () => debounceWithThrottle(fireSuggest, SUGGEST_DEBOUNCE_MS, SUGGEST_MAX_WAIT_MS),
-    [fireSuggest],
-  );
-
   useEffect(() => {
+    const unsubscribeSettings = subscribeGenAppsSettings((snapshot) => {
+      suggestionSettingsRef.current = snapshot.settings;
+      const query = queryRef.current.trim();
+      if (query && query.length <= GEN_APP_LIMITS.queryMaxLength) {
+        setSuggestions(localSuggestions(query, snapshot.settings));
+      }
+    });
+    const settingsFn = clientRef.current.settings;
+    const hydrateSettings = () => {
+      if (!settingsFn) return;
+      void hydrateGenAppsSettings(() => settingsFn.call(clientRef.current)).catch(
+        () => {},
+      );
+    };
+    const hydrateVisibleSettings = () => {
+      if (document.visibilityState === "visible") hydrateSettings();
+    };
+    hydrateSettings();
+    window.addEventListener("focus", hydrateSettings);
+    document.addEventListener("visibilitychange", hydrateVisibleSettings);
     void refreshInstalled();
     return () => {
-      debouncedSuggest.cancel();
-      suggestAbort.current?.abort();
+      unsubscribeSettings();
+      window.removeEventListener("focus", hydrateSettings);
+      document.removeEventListener("visibilitychange", hydrateVisibleSettings);
       stopProgressPoll();
     };
-  }, [refreshInstalled, debouncedSuggest, stopProgressPoll]);
+  }, [refreshInstalled, stopProgressPoll]);
 
-  const search = useCallback(
-    (query: string) => {
-      queryRef.current = query;
-      // 输入一变化就让在途响应失效，不能等下一次防抖请求真正发出。
-      suggestAbort.current?.abort();
-      suggestAbort.current = null;
-      suggestSeq.current += 1;
-      const trimmed = query.trim();
-      if (!trimmed) {
-        debouncedSuggest.cancel();
-        setSuggestions([]);
-        localSuggestionsRef.current = [];
-        setPhase("idle");
-        setError(null);
-        return;
-      }
-      if (trimmed.length > GEN_APP_LIMITS.queryMaxLength) {
-        debouncedSuggest.cancel();
-        setSuggestions([]);
-        localSuggestionsRef.current = [];
-        setPhase("idle");
-        setError(null);
-        return;
-      }
-      const immediate = localSuggestions(trimmed);
-      localSuggestionsRef.current = immediate;
-      setSuggestions(immediate);
-      debouncedSuggest(trimmed);
-    },
-    [debouncedSuggest],
-  );
+  const search = useCallback((query: string) => {
+    queryRef.current = query;
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length > GEN_APP_LIMITS.queryMaxLength) {
+      setSuggestions([]);
+      setError(null);
+      return;
+    }
+    setSuggestions(localSuggestions(trimmed, suggestionSettingsRef.current));
+    setError(null);
+  }, []);
 
   /** 流式生成的中断控制（windowId → abort） */
   const streamAborts = useRef<Map<string, AbortController>>(new Map());
@@ -351,7 +273,28 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
   const activateSuggestion = useCallback(
     async (suggestion: GenAppSuggestion) => {
       if (pendingSuggestionId) return; // 单并发
+      const sourceQuery = queryRef.current.trim();
+      if (!sourceQuery || sourceQuery.length > GEN_APP_LIMITS.queryMaxLength) return;
       setPendingSuggestionId(suggestion.id);
+      try {
+        await flushPendingGenAppsSettings();
+      } catch (settingsError: unknown) {
+        setError(
+          new GenAppClientError({
+            status: 0,
+            code: "internal_error",
+            message:
+              settingsError instanceof Error
+                ? settingsError.message
+                : "Gen Apps settings could not be saved.",
+            requestId: "",
+            retryable: true,
+          }),
+        );
+        setPendingSuggestionId(null);
+        setPhase("error");
+        return;
+      }
       setPhase("generating");
       setError(null);
       const idempotencyKey = `${suggestion.id}-${Date.now()}`;
@@ -445,7 +388,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           try {
             const draft = await streamFn(
               suggestion,
-              queryRef.current,
+              sourceQuery,
               idempotencyKey,
               {
                 onDelta: (text) => {
@@ -478,7 +421,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
         startProgressPoll(idempotencyKey);
         const draft: GenAppDraft = await clientRef.current.generateDraft(
           suggestion,
-          queryRef.current,
+          sourceQuery,
           idempotencyKey,
           new AbortController().signal,
         );
@@ -500,7 +443,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
             startProgressPoll(idempotencyKey);
             const draft = await clientRef.current.generateDraft(
               suggestion,
-              queryRef.current,
+              sourceQuery,
               idempotencyKey,
               new AbortController().signal,
             );

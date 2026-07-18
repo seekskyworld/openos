@@ -53,6 +53,7 @@ import { GenAppsController } from "./gen-apps/http/gen-apps-controller.js";
 import { DeterministicFakeGenerator } from "./gen-apps/infrastructure/deterministic-fake-generator.js";
 import {
   agenticBudgetMs,
+  creativityTier,
   loadGenAppsSettings,
   saveGenAppsSettings,
 } from "./gen-apps/gen-app-settings.js";
@@ -87,7 +88,14 @@ export function startBridgeServer(options: CreateOptions = {}) {
       ? null
       : new SettingsSwitchedGenerator(env);
   const genAppsGenerator =
-    switchedGenerator ?? new DeterministicFakeGenerator();
+    switchedGenerator ??
+    new DeterministicFakeGenerator(() => {
+      const settings = loadGenAppsSettings(env);
+      return {
+        language: settings.appLanguage,
+        style: creativityTier(settings.creativity),
+      };
+    });
   const genAppsController = new GenAppsController({
     service: new GenAppsService({
       generator: genAppsGenerator,

@@ -950,7 +950,6 @@ export function App() {
         onQueryChange={genApps.search}
         removeLabel={t("genapps.remove")}
         busy={
-          genApps.view.phase === "suggesting" ||
           genApps.view.phase === "generating" ||
           genApps.view.phase === "installing"
         }
@@ -959,11 +958,9 @@ export function App() {
             ? genApps.view.agentPhase
               ? `${t("genapps.busy.generating")} (${genApps.view.agentPhase})`
               : t("genapps.busy.generating")
-            : genApps.view.phase === "suggesting"
-              ? t("genapps.busy.suggesting")
-              : genApps.view.phase === "installing"
-                ? t("genapps.installing")
-                : undefined
+            : genApps.view.phase === "installing"
+              ? t("genapps.installing")
+              : undefined
         }
         errorText={
           genApps.view.phase === "error" && genApps.view.error

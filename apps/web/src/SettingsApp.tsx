@@ -18,6 +18,12 @@ import {
   type GenAppsSettingsPayload,
 } from "./api";
 import { LOCALE_OPTIONS, useI18n } from "./i18n";
+import {
+  getGenAppsSettingsSnapshot,
+  hydrateGenAppsSettings,
+  stageGenAppsSettings,
+  subscribeGenAppsSettings,
+} from "./gen-apps/settings-sync";
 import { ProvidersAuthApp } from "./ProvidersAuthApp";
 import { useTheme, type ThemeMode } from "./theme";
 
@@ -108,46 +114,47 @@ export function SettingsApp({ onClose, onSaved }: Props) {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [apiKeyPreview, setApiKeyPreview] = useState("");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
-  const [genSettings, setGenSettings] = useState<GenAppsSettingsPayload>({
-    suggestionCount: 6,
-    creativity: 25,
-    appLanguage: "auto",
-    generationMode: "agentic",
-    agentMaxRounds: 3,
-  });
-  const genSaveTimer = useRef<number | null>(null);
+  const initialGenSettings = useMemo(getGenAppsSettingsSnapshot, []);
+  const [genSettings, setGenSettings] = useState<GenAppsSettingsPayload>(
+    initialGenSettings.settings,
+  );
+  const [genSettingsSaveError, setGenSettingsSaveError] = useState<string | null>(
+    initialGenSettings.error,
+  );
+  const genSettingsRef = useRef(genSettings);
 
   // 加载 Gen Apps 设置
   useEffect(() => {
     let cancelled = false;
-    fetchGenAppsSettings()
-      .then((r) => {
+    const unsubscribe = subscribeGenAppsSettings((snapshot) => {
+      if (!cancelled) {
+        genSettingsRef.current = snapshot.settings;
+        setGenSettings(snapshot.settings);
+        setGenSettingsSaveError(snapshot.error);
+      }
+    });
+    void hydrateGenAppsSettings(async () => (await fetchGenAppsSettings()).settings)
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setGenSettings((prev) => ({
-            ...prev,
-            ...r.settings,
-            generationMode: r.settings.generationMode ?? prev.generationMode,
-            agentMaxRounds: r.settings.agentMaxRounds ?? prev.agentMaxRounds,
-          }));
+          setGenSettingsSaveError(
+            error instanceof Error ? error.message : String(error),
+          );
         }
-      })
-      .catch(() => {});
+      });
     return () => {
       cancelled = true;
-      if (genSaveTimer.current) window.clearTimeout(genSaveTimer.current);
+      unsubscribe();
     };
   }, []);
 
   /** 本地即时更新 + 300ms 防抖持久化 */
   function updateGenSettings(patch: Partial<GenAppsSettingsPayload>) {
-    setGenSettings((prev) => {
-      const next = { ...prev, ...patch };
-      if (genSaveTimer.current) window.clearTimeout(genSaveTimer.current);
-      genSaveTimer.current = window.setTimeout(() => {
-        void saveGenAppsSettings(next).catch(() => {});
-      }, 300);
-      return next;
-    });
+    const next = { ...genSettingsRef.current, ...patch };
+    genSettingsRef.current = next;
+    stageGenAppsSettings(
+      patch,
+      async (settings) => (await saveGenAppsSettings(settings)).settings,
+    );
   }
 
   function creativityTierKey(v: number): string {
@@ -626,6 +633,12 @@ export function SettingsApp({ onClose, onSaved }: Props) {
               <p className="settings-subtitle">{t("genapps.subtitle")}</p>
             </div>
           </header>
+
+          {genSettingsSaveError ? (
+            <div className="settings-test-banner error" role="alert">
+              {t("genapps.settings.saveError")} {genSettingsSaveError}
+            </div>
+          ) : null}
 
           <section className="settings-section settings-card">
             {/* 生成偏好滑杆：系统工具 → 商店应用 → 独立开发 → 天马行空 */}

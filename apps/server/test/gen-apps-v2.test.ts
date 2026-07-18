@@ -7,10 +7,12 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
   buildGenAppRuntimeDocument,
+  createFastGenAppSuggestions,
   GEN_APP_FORMAT,
   GEN_APP_LEGACY_FORMAT,
   GEN_APP_LIMITS,
   parseGenAppArtifact,
+  parseGenAppSuggestion,
 } from "@openos/shared";
 import { compileArtifact, compileFragment } from "../src/gen-apps/artifact-compiler.js";
 import { brandValidated } from "../src/gen-apps/domain.js";
@@ -29,10 +31,139 @@ import type { GenAppGenerator } from "../src/gen-apps/ports.js";
 import { parseRuntimePatchProposal } from "../src/gen-apps/runtime-patch.js";
 import { RuntimeSessionStore } from "../src/gen-apps/runtime-session-store.js";
 import { createOpenOsDatabaseAt } from "../src/database/openos-database.js";
+import { loadServerEnv } from "../src/env.js";
+import { LlmGenAppGenerator } from "../src/gen-apps/infrastructure/llm-gen-app-generator.js";
 
 const context = () => ({
   requestId: "test-request",
   signal: new AbortController().signal,
+});
+
+test("suggestions are complete without waiting for an LLM provider", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "openos-fast-suggestions-test-"));
+  try {
+    const generator = new LlmGenAppGenerator(
+      loadServerEnv({
+        dataDir: directory,
+        llm: {
+          provider: "openai-compatible",
+          baseUrl: "http://127.0.0.1:1/v1",
+          apiKey: "",
+          model: "intentionally-unavailable",
+        },
+      }),
+    );
+    const startedAt = performance.now();
+    const suggestions = await generator.suggest(
+      { query: "谷歌浏览器", count: 6 },
+      new AbortController().signal,
+    );
+    const durationMs = performance.now() - startedAt;
+
+    assert.equal(suggestions.length, 6);
+    assert.equal(new Set(suggestions.map((item) => item.name)).size, 6);
+    assert(suggestions.some((item) => String(item.name).includes("浏览器")));
+    assert(durationMs < 100, `suggestions took ${durationMs.toFixed(1)}ms`);
+
+    const longList = await generator.suggest(
+      { query: "quantum garden manager", count: 12 },
+      new AbortController().signal,
+    );
+    assert.equal(longList.length, 12);
+    assert.equal(new Set(longList.map((item) => item.name)).size, 12);
+    assert(longList.some((item) => item.name === "Quantum garden Workspace"));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("fast suggestion policy keeps language, style, and intent deterministic", () => {
+  const forcedChinese = createFastGenAppSuggestions({
+    query: "calculator",
+    count: 2,
+    language: "zh",
+  });
+  assert.deepEqual(
+    forcedChinese.map((item) => item.name),
+    ["计算器", "科学计算器"],
+  );
+
+  const systemCalculator = createFastGenAppSuggestions({
+    query: "calculator",
+    count: 6,
+    style: "system",
+  });
+  const fantasyCalculator = createFastGenAppSuggestions({
+    query: "calculator",
+    count: 6,
+    style: "fantasy",
+  });
+  assert.notDeepEqual(
+    fantasyCalculator.map((item) => item.name),
+    systemCalculator.map((item) => item.name),
+  );
+  assert(fantasyCalculator.some((item) => item.name.includes("Simulator")));
+  const minimalStyleNames = (["system", "appstore", "indie", "fantasy"] as const)
+    .map((style) =>
+      createFastGenAppSuggestions({ query: "calculator", count: 2, style })[1]
+        .name,
+    );
+  assert.equal(new Set(minimalStyleNames).size, 4);
+
+  const boundaryCases = ["a pie recipe", "rainbow maker", "billion counter"];
+  for (const query of boundaryCases) {
+    const names = createFastGenAppSuggestions({ query, count: 6 }).map(
+      (item) => item.name,
+    );
+    assert(!names.includes("JSON Tools"), `${query} matched developer tools`);
+    assert(!names.includes("Weather"), `${query} matched weather`);
+    assert(!names.includes("Bill Reminder"), `${query} matched finance`);
+  }
+  assert(
+    createFastGenAppSuggestions({ query: "web", count: 6 }).some(
+      (item) => item.name === "Web Browser",
+    ),
+  );
+  assert.equal(
+    createFastGenAppSuggestions({ query: "build a kanban board", count: 6 })[0]
+      .name,
+    "Kanban board",
+  );
+  assert(
+    createFastGenAppSuggestions({
+      query: "build a personal recipe organizer with pantry tracking",
+      count: 6,
+    })[0].name.includes("recipe"),
+  );
+
+  const twelveGeneric = createFastGenAppSuggestions({
+    query: "quantum garden manager",
+    count: 12,
+    style: "indie",
+  });
+  assert.equal(new Set(twelveGeneric.map((item) => item.iconEmoji)).size, 12);
+  assert(twelveGeneric.every((item) => parseGenAppSuggestion(item) !== null));
+});
+
+test("deterministic fake keeps the selected app identity and interaction style", async () => {
+  const fake = new DeterministicFakeGenerator(() => ({
+    language: "en",
+    style: "fantasy",
+  }));
+  const artifact = await fake.generate(
+    {
+      query: "weather <tracker>",
+      name: "Weather & Forecast",
+      description: "Forecasts with <alerts>",
+    },
+    new AbortController().signal,
+  );
+
+  assert.equal(artifact.interactionMode, "improv");
+  assert(artifact.html.includes("Weather &amp; Forecast"));
+  assert(artifact.html.includes("Forecasts with &lt;alerts&gt;"));
+  assert(artifact.html.includes("weather &lt;tracker&gt;"));
+  assert(!artifact.html.includes("<alerts>"));
 });
 
 test("V2 compiler removes executable markup and declares stable actions", () => {

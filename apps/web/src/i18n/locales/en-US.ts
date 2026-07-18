@@ -251,11 +251,11 @@ export const enUS: Record<string, string> = {
 
   // —— Gen Apps ——
   "genapps.remove": "Remove",
-  "genapps.busy.suggesting": "Finding apps…",
   "genapps.busy.generating": "Generating app…",
   "genapps.error.prefix": "Generation failed: ",
   "genapps.installing": "Saving to Applications…",
   "genapps.draftHint": "Closes will save to Applications",
+  "genapps.settings.saveError": "Could not save AI Apps settings.",
 
   // —— Gen Apps settings ——
   "settings.tab.genapps": "AI Apps",

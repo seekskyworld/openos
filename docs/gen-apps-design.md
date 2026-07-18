@@ -52,7 +52,7 @@ V2 线协议不重复返回 Shell 的 CSS/JavaScript，`html` 在 V2 响应中�
 
 ### 1.1 第一阶段目标
 
-1. 搜索词非空后，生成 2–12 个名字和图标不同的候选，默认 6 个。
+1. 搜索词非空后，同步生成 2–12 个名字和图标不同的候选（默认 6 个），候选首屏不依赖模型或网络。
 2. 点击候选后生成一个可交互应用，并立即以草稿窗口预览。
 3. 首次关闭草稿窗口时安装；安装成功后出现在启动台。
 4. 已安装应用再次打开时不调用模型。
@@ -87,7 +87,7 @@ Storage Row 只属于 Repository Adapter，不是领域模型，也不是 HTTP �
 ### 2.2 生命周期
 
 ```text
-suggesting
+candidate-ready
     |
     v
 generating -> failed
@@ -118,7 +118,7 @@ apps/web
         |
         v
   GenAppWorkspace module
-    查询防抖、竞态取消、草稿状态、安装、动态窗口协调
+    同步候选、设置快照、草稿状态、安装、动态窗口协调
         |
         v
   GenAppsClient port
@@ -126,7 +126,7 @@ apps/web
         +-- HttpGenAppsClient adapter
 
 packages/shared
-  版本化 Request/Response DTO + schema + error code
+  版本化 DTO/schema/error code + 浏览器安全的运行时与候选策略
 
 apps/server
   HTTP Controller adapter
@@ -216,7 +216,7 @@ type GenAppWorkspace = {
     installed: GenAppSummary[];
     suggestions: GenAppSuggestion[];
     pendingSuggestionId?: string;
-    phase: "idle" | "suggesting" | "generating" | "installing" | "error";
+    phase: "idle" | "generating" | "installing" | "error";
     error?: GenAppClientError;
   };
   search(query: string): void;
@@ -226,13 +226,15 @@ type GenAppWorkspace = {
 };
 ```
 
-`search` 隐藏防抖、AbortController、单调请求序号和候选混排；`activate` 隐藏“生成还是读取”、动态窗口注册与触达；`requestClose` 隐藏草稿安装状态机。AppLauncher 和 App.tsx 不直接调用 CRUD。
+`search` 用已加载的设置快照同步生成候选，不发网络请求；`activate` 隐藏“生成还是读取”、动态窗口注册与触达；`requestClose` 隐藏草稿安装状态机。AppLauncher 和 App.tsx 不直接调用 CRUD。
 
 ## 5. 服务端目录建议
 
 ```text
 packages/shared/src/gen-apps.ts
   DTO、schema、错误码、artifact/runtime 版本
+packages/shared/src/gen-app-suggestions.ts
+  浏览器与 Bridge 共用的确定性候选策略
 
 apps/server/src/database/
   openos-database.ts
@@ -517,8 +519,8 @@ type LauncherItem =
 
 `GenAppWorkspace` 负责：
 
-- 500ms 防抖；
-- 每次新查询 abort 旧请求，并用请求序号防止旧响应覆盖新响应；
+- 从 `/api/settings/gen-apps` 加载并订阅进程内设置快照；
+- 每次输入在浏览器内同步生成完整候选，不创建候选 HTTP 请求；
 - 已安装 -> 内置 -> 候选的混排策略；
 - 生成、草稿运行、关闭安装与错误恢复；
 - 删除后同步注册表和运行时。
@@ -543,12 +545,14 @@ type LauncherItem =
 
 `/api/settings/gen-apps` 独立校验和原子 merge；修改 LLM 设置不能覆盖 Gen Apps 设置，反向亦然。
 
+浏览器通过 `settings-sync` 维护可订阅快照：设置编辑先乐观更新候选，300ms 内合并持久化；点击候选前必须 flush 待保存设置，确保 Bridge 生成使用同一份语言、creativity 和模式。保存失败回滚到最近一次服务端确认值并显示错误。多标签页用 `BroadcastChannel` 传播失效通知，再从 Bridge GET 权威快照，避免乱序响应覆盖较新设置；窗口重新聚焦时也会校准。
+
 ## 12. 可观测性与错误处理
 
 每次 suggest/generate/install/launch 记录：
 
 - `requestId`、app/draft id、阶段与耗时；
-- provider、model、Prompt version、token 使用量；
+- suggest 的本地策略版本；generate 的 provider、model、Prompt version、token 使用量；
 - artifact hash、大小、policy/runtime 版本；
 - 标准错误码和是否可重试。
 
@@ -559,6 +563,7 @@ type LauncherItem =
 ### 13.1 模块测试
 
 - 使用 FakeGenerator + InMemoryRepository 覆盖完整状态机、幂等、TTL、配额和错误映射。
+- 候选在 LLM 未配置或上游不可用时仍须返回完整数量，进程内耗时门槛低于 100ms。
 - ArtifactCompiler 使用恶意 fixture 覆盖外链、动态标签、超大 HTML、非法 metadata 和畸形文档。
 - 测试只通过 GenApps 模块接口断言可观察结果，不测试内部函数。
 

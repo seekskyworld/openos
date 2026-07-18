@@ -71,7 +71,7 @@ async function runAgentLoop(deps, firstPrompt: CoreMessage[], signal): Promise<A
 ### 2.3 agentic-generator.ts 要点
 
 - `class AgenticGenAppGenerator implements GenAppGenerator`
-- `suggest()` 直接复用 `LlmGenAppGenerator.suggest`（组合而非继承：内部持有一个 LlmGenAppGenerator 实例委托）
+- `suggest()` 复用 `LlmGenAppGenerator.suggest` 的共享确定性策略；候选不进入 AgentLoop，也不调用 LLM
 - `generate()`：
   1. 组装首轮 prompt（复用 `prompt-policy.buildGeneratePrompt`）
   2. 构造 deps：`generate` 走 `coreGenerate`（llm-core），`validate` 走阶段一校验器

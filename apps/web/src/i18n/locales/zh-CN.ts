@@ -251,11 +251,11 @@ export const zhCN: Record<string, string> = {
 
   // —— Gen Apps ——
   "genapps.remove": "删除",
-  "genapps.busy.suggesting": "正在生成候选…",
   "genapps.busy.generating": "正在生成应用…",
   "genapps.error.prefix": "生成失败：",
   "genapps.installing": "正在保存到启动台…",
   "genapps.draftHint": "关闭后将保存到启动台",
+  "genapps.settings.saveError": "AI 应用设置保存失败。",
 
   // —— Gen Apps 设置 ——
   "settings.tab.genapps": "AI 应用",

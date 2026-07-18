@@ -5,6 +5,7 @@ import {
   parseGenAppRuntimeResumeRequest,
   parseGenAppSuggestion,
   parseGenAppSummary,
+  parseGenAppsSettings,
   type GenAppDraft,
   type GenAppErrorCode,
   type GenAppLaunchBundle,
@@ -14,6 +15,7 @@ import {
   type GenAppRuntimeResumeResponse,
   type GenAppSuggestion,
   type GenAppSummary,
+  type GenAppsSettings,
 } from "@openos/shared";
 import { BRIDGE_TOKEN_HEADER } from "@openos/shared";
 
@@ -54,6 +56,8 @@ export type GenAppProgress = {
 };
 
 export interface GenAppsClient {
+  /** 启动台同步候选所需的本地策略设置。 */
+  settings?(): Promise<GenAppsSettings>;
   suggest(
     query: string,
     count: number | undefined,
@@ -186,6 +190,16 @@ function parseDraft(v: unknown): GenAppDraft {
 }
 
 export class HttpGenAppsClient implements GenAppsClient {
+  async settings(): Promise<GenAppsSettings> {
+    const body = (await request("/settings/gen-apps", {
+      method: "GET",
+      signal: AbortSignal.timeout(2_000),
+    })) as Record<string, unknown>;
+    const settings = parseGenAppsSettings(body.settings);
+    if (!settings) badPayload("Gen Apps settings");
+    return settings;
+  }
+
   async suggest(
     query: string,
     count: number | undefined,

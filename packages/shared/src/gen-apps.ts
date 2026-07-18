@@ -66,9 +66,6 @@ export const GEN_APP_LIMITS = {
   runtimeSessionTtlMs: 30 * 60 * 1000,
   runtimeSessionMaxTurns: 6,
   runtimeSessionHistoryCharsPerTurn: 4_000,
-  /** 候选缓存 */
-  suggestionCacheTtlMs: 5 * 60 * 1000,
-  suggestionCacheMaxEntries: 100,
 } as const;
 
 export const GEN_APP_LOCAL_ACTIONS = [
@@ -313,8 +310,23 @@ export type GenAppLaunchResponse = {
   requestId: string;
 };
 
+export type GenAppLanguage = "auto" | "zh" | "en";
+export type GenAppGenerationMode = "fast" | "agentic";
+
 export type GenAppsSettings = {
   suggestionCount: number;
+  creativity: number;
+  appLanguage: GenAppLanguage;
+  generationMode: GenAppGenerationMode;
+  agentMaxRounds: number;
+};
+
+export const GEN_APP_DEFAULT_SETTINGS: GenAppsSettings = {
+  suggestionCount: GEN_APP_LIMITS.suggestionCountDefault,
+  creativity: 25,
+  appLanguage: "auto",
+  generationMode: "agentic",
+  agentMaxRounds: 3,
 };
 
 export type GenAppsSettingsResponse = {
@@ -338,6 +350,28 @@ export function clampSuggestionCount(value: unknown): number {
     GEN_APP_LIMITS.suggestionCountMax,
     Math.max(GEN_APP_LIMITS.suggestionCountMin, n),
   );
+}
+
+export function parseGenAppsSettings(value: unknown): GenAppsSettings | null {
+  if (!isRecord(value)) return null;
+  const creativity =
+    typeof value.creativity === "number" && Number.isFinite(value.creativity)
+      ? Math.min(100, Math.max(0, Math.round(value.creativity)))
+      : GEN_APP_DEFAULT_SETTINGS.creativity;
+  const agentMaxRounds =
+    typeof value.agentMaxRounds === "number" && Number.isFinite(value.agentMaxRounds)
+      ? Math.min(10, Math.max(0, Math.round(value.agentMaxRounds)))
+      : GEN_APP_DEFAULT_SETTINGS.agentMaxRounds;
+  return {
+    suggestionCount: clampSuggestionCount(value.suggestionCount),
+    creativity,
+    appLanguage:
+      value.appLanguage === "zh" || value.appLanguage === "en"
+        ? value.appLanguage
+        : "auto",
+    generationMode: value.generationMode === "fast" ? "fast" : "agentic",
+    agentMaxRounds,
+  };
 }
 
 export function parseGenAppSuggestion(v: unknown): GenAppSuggestion | null {

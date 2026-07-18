@@ -1,9 +1,11 @@
 import {
   BRIDGE_TOKEN_HEADER,
+  parseGenAppsSettings,
   type BootstrapInfo,
   type ChatMessage,
   type ChatResponse,
   type HealthResponse,
+  type GenAppsSettings,
   type LlmModelsRequest,
   type LlmModelsResponse,
   type LlmSettingsPublic,
@@ -215,21 +217,24 @@ export function oauthCallback(payload: ProviderOauthCallbackRequest) {
 
 // ===== Gen Apps 设置 =====
 
-export type GenAppsSettingsPayload = {
-  suggestionCount: number;
-  creativity: number;
-  appLanguage: "auto" | "zh" | "en";
-  generationMode: "fast" | "agentic";
-  agentMaxRounds: number;
-};
+export type GenAppsSettingsPayload = GenAppsSettings;
 
-export function fetchGenAppsSettings() {
-  return request<{ settings: GenAppsSettingsPayload }>("/settings/gen-apps");
+export async function fetchGenAppsSettings() {
+  const body = await request<{ settings: unknown }>("/settings/gen-apps", {
+    signal: AbortSignal.timeout(2_000),
+  });
+  const settings = parseGenAppsSettings(body.settings);
+  if (!settings) throw new Error("Malformed Gen Apps settings response.");
+  return { settings };
 }
 
-export function saveGenAppsSettings(update: Partial<GenAppsSettingsPayload>) {
-  return request<{ settings: GenAppsSettingsPayload }>("/settings/gen-apps", {
+export async function saveGenAppsSettings(update: Partial<GenAppsSettingsPayload>) {
+  const body = await request<{ settings: unknown }>("/settings/gen-apps", {
     method: "PUT",
     body: JSON.stringify(update),
+    signal: AbortSignal.timeout(5_000),
   });
+  const settings = parseGenAppsSettings(body.settings);
+  if (!settings) throw new Error("Malformed Gen Apps settings response.");
+  return { settings };
 }

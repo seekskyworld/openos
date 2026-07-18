@@ -1,6 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { GEN_APP_LIMITS, clampSuggestionCount } from "@openos/shared";
+import {
+  GEN_APP_DEFAULT_SETTINGS,
+  clampSuggestionCount,
+  fastSuggestionStyle,
+  type FastSuggestionStyle,
+  type GenAppGenerationMode,
+  type GenAppLanguage,
+  type GenAppsSettings,
+} from "@openos/shared";
 import type { ServerEnv } from "../env.js";
 
 /**
@@ -14,28 +22,16 @@ import type { ServerEnv } from "../env.js";
  *   76–100 fantasy   天马行空的想象应用
  */
 
-export type GenAppLanguage = "auto" | "zh" | "en";
-export type GenerationMode = "fast" | "agentic";
+export type { GenAppLanguage };
+export type GenerationMode = GenAppGenerationMode;
 
-export type GenAppsPersistedSettings = {
+export type GenAppsPersistedSettings = GenAppsSettings & {
   version: 1;
-  suggestionCount: number;
-  creativity: number;
-  /** 生成应用界面语言：auto=跟随系统语言 */
-  appLanguage: GenAppLanguage;
-  /** fast=单发；agentic=校验+修复循环 */
-  generationMode: GenerationMode;
-  /** agentic 最大轮次（含首轮）：1-10，0=无限（模型可自判提前完成，受总时长兜底） */
-  agentMaxRounds: number;
 };
 
 export const DEFAULT_GEN_APPS_SETTINGS: GenAppsPersistedSettings = {
+  ...GEN_APP_DEFAULT_SETTINGS,
   version: 1,
-  suggestionCount: GEN_APP_LIMITS.suggestionCountDefault,
-  creativity: 25,
-  appLanguage: "auto",
-  generationMode: "agentic",
-  agentMaxRounds: 3,
 };
 
 export function clampLanguage(value: unknown): GenAppLanguage {
@@ -63,13 +59,10 @@ export function agenticBudgetMs(agentMaxRounds: number): number {
   return Math.min(1_500_000, 720_000 + Math.max(0, agentMaxRounds - 3) * 120_000);
 }
 
-export type CreativityTier = "system" | "appstore" | "indie" | "fantasy";
+export type CreativityTier = FastSuggestionStyle;
 
 export function creativityTier(value: number): CreativityTier {
-  if (value <= 25) return "system";
-  if (value <= 50) return "appstore";
-  if (value <= 75) return "indie";
-  return "fantasy";
+  return fastSuggestionStyle(value);
 }
 
 function settingsPath(env: ServerEnv): string {
@@ -144,24 +137,17 @@ export function clampCreativity(value: unknown): number {
   return Math.min(100, Math.max(0, n));
 }
 
-/**
- * creativity → 采样温度：
- * 系统工具需要稳定收敛（低温），天马行空需要发散（高温）。
- * suggest 用满档温度；generate 略降（代码正确性优先）。
- */
-export function creativityTemperature(value: number): {
-  suggest: number;
-  generate: number;
-} {
+/** creativity → 制品生成温度；候选已改为确定性本地策略，不再消耗模型采样。 */
+export function creativityGenerationTemperature(value: number): number {
   const tier = creativityTier(value);
   switch (tier) {
     case "system":
-      return { suggest: 0.3, generate: 0.2 };
+      return 0.2;
     case "appstore":
-      return { suggest: 0.6, generate: 0.3 };
+      return 0.3;
     case "indie":
-      return { suggest: 0.85, generate: 0.4 };
+      return 0.4;
     case "fantasy":
-      return { suggest: 1.1, generate: 0.5 };
+      return 0.5;
   }
 }

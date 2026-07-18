@@ -28,9 +28,9 @@
 - V2 patch 必须匹配当前 revision、服务端选择的 target，并通过 parse5 声明式清洗；无效模型输出只修复一次。
 - 所有 `data-target`、`data-source`、`for` 与 ARIA ID 引用在整图合并后复验；制品最多 2,000 个元素节点。
 - 固定 Shell CSP 只放行 nonce 标记的可信脚本和样式；流式原文在 iframe 内再次清洗后才挂载。
-- 搜索先同步给出本地模板结果，再合并远端建议；服务端远端建议缓存 5 分钟。
+- 搜索由浏览器与 Bridge 复用同一确定性语义目录：浏览器按内存设置快照同步给出完整候选，不再发候选请求；Bridge API 供其他调用方毫秒级生成。两条链路都不调用 LLM。
 - 正常交互只传单目标 patch 且每窗口串行；目标被本地动作移除时 iframe 请求一次全量 resync。服务端 revision 领先时用 409 权威快照对齐并明确提示重试，不把未执行动作误报成功；只有 session 不存在时 `/resume` 才接受宿主快照并重建会话。
-- deterministic fake 最近一次验收：建议 18ms、首块 2ms、完整生成 241ms、补丁 5ms、V2 线载荷相对编译 Shell 减少 83%，revision 恢复通过；真实模型延迟由供应商决定，应继续按 P50/P95 观测。
+- 最近一次验收：真实候选 API 冷查询中位数 2.18ms、P95 28.41ms，浏览器 6 个候选 10.4ms 可见且零候选请求；deterministic fake 首块 2ms、完整生成 275ms、补丁 6ms、V2 线载荷相对编译 Shell 减少 82%，revision 恢复通过；制品生成的真实模型延迟仍由供应商决定，应继续按 P50/P95 观测。
 
 ## 8. 追加能力（对照 Microsoft Build 2026「Vibe OS」演示后实施）
 

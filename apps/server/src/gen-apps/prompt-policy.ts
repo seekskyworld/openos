@@ -20,39 +20,14 @@ const LANGUAGE_GUIDANCE: Record<GenAppLanguage, string> = {
 
 const TIER_GUIDANCE: Record<CreativityTier, string> = {
   system:
-    "候选必须是 macOS 系统级自带工具的风格：朴素、单一职责、真实存在于操作系统里的那类应用（如计算器、备忘录、时钟、词典、预览）。禁止花哨概念。",
+    "应用必须是 macOS 系统级自带工具的风格：朴素、单一职责、真实存在于操作系统里的那类应用（如计算器、备忘录、时钟、词典、预览）。禁止花哨概念。",
   appstore:
-    "候选应是应用商店里常见的成熟商业产品风格：功能完整、面向大众、有清晰使用场景（如番茄钟、记账、习惯打卡、白噪音）。",
+    "应用应是应用商店里常见的成熟商业产品风格：功能完整、面向大众、有清晰使用场景（如番茄钟、记账、习惯打卡、白噪音）。",
   indie:
-    "候选应是个人独立开发者会做的小而美工具：有个性、解决一个具体的小痛点、可能有点极客味（如正则测试器、色板生成、Git 提交词生成）。",
+    "应用应是个人独立开发者会做的小而美工具：有个性、解决一个具体的小痛点、可能有点极客味（如正则测试器、色板生成、Git 提交词生成）。",
   fantasy:
-    "候选可以天马行空：大胆想象未来或超现实的应用概念，但仍要能用网页交互表达出核心玩法（如情绪天气台、梦境记录仪、平行人生模拟）。",
+    "应用可以天马行空：大胆想象未来或超现实的概念，但仍要能用网页交互表达出核心玩法（如情绪天气台、梦境记录仪、平行人生模拟）。",
 };
-
-export function buildSuggestPrompt(input: {
-  query: string;
-  count: number;
-  tier: CreativityTier;
-  language: GenAppLanguage;
-}): { system: string; user: string } {
-  const system = [
-    "你是 OpenOS 的应用商店策划，为用户搜索词生成应用候选。",
-    "输出严格 JSON 数组，无任何额外文本，每项形如：",
-    '{"name":"应用名","description":"一句话描述","iconEmoji":"单个emoji","iconTheme":"blue|purple|pink|orange|green|teal|graphite|red"}',
-    "硬性要求：",
-    `1. 恰好 ${input.count} 个候选；`,
-    "2. name 是自然、真实可信的应用名（2-6 个字为佳），彼此完全不同；",
-    "3. 绝对禁止把搜索词原样拼接进名字（如搜索“计算器”不能出现“计算器记事本”这类结果）；名字应当是搜索词所指的那类应用本身或语义相近的真实应用；",
-    "4. description 说明这个应用做什么（≤20 字）；",
-    "5. iconEmoji 与应用功能贴合；iconTheme 从给定枚举里选；",
-    `6. 风格定位：${TIER_GUIDANCE[input.tier]}`,
-    `7. ${LANGUAGE_GUIDANCE[input.language]}`,
-    "示例：搜索“计算器”应产出类似：计算器、科学计算器、汇率换算、房贷计算、单位换算、小费计算 —— 每个都是真实成立的应用。",
-  ].join("\n");
-
-  const user = JSON.stringify({ 搜索词: input.query, 数量: input.count });
-  return { system, user };
-}
 
 export function buildGeneratePrompt(input: {
   name: string;

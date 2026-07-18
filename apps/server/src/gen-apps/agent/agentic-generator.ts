@@ -3,7 +3,7 @@ import { coreGenerate, type CoreMessage, type WireTarget } from "../../llm-core/
 import { resolveEffectiveLlm } from "../../settings-store.js";
 import { compileArtifact } from "../artifact-compiler.js";
 import {
-  creativityTemperature,
+  creativityGenerationTemperature,
   creativityTier,
   loadGenAppsSettings,
 } from "../gen-app-settings.js";
@@ -138,7 +138,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
       tier,
       language: settings.appLanguage,
     });
-    const firstTemp = creativityTemperature(settings.creativity).generate;
+    const firstTemp = creativityGenerationTemperature(settings.creativity);
 
     const target: WireTarget = {
       baseUrl: llm.baseUrl,

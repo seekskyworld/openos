@@ -1,13 +1,13 @@
 import type { ServerEnv } from "../../env.js";
-import { GEN_APP_LIMITS } from "@openos/shared";
+import { createFastGenAppSuggestionSeeds } from "@openos/shared";
 import { coreGenerate, type WireTarget } from "../../llm-core/index.js";
 import { resolveEffectiveLlm } from "../../settings-store.js";
 import {
-  creativityTemperature,
+  creativityGenerationTemperature,
   creativityTier,
   loadGenAppsSettings,
 } from "../gen-app-settings.js";
-import { buildGeneratePrompt, buildSuggestPrompt } from "../prompt-policy.js";
+import { buildGeneratePrompt } from "../prompt-policy.js";
 import { genAppError, type UntrustedArtifact, type UntrustedSuggestion } from "../domain.js";
 import type {
   ContinuePortInput,
@@ -18,36 +18,12 @@ import type {
 
 /**
  * 真实 LLM 生成器（反腐层）：
- * - 走当前生效的 LLM 配置（Providers/Custom 里配置的模型）
- * - suggest 输出解析为 UntrustedSuggestion[]，generate 提取为 UntrustedArtifact
+ * - 候选由共享确定性策略同步生成，不占用重型模型请求
+ * - generate/continue 走当前生效的 LLM 配置
  * - Prompt 由 prompt-policy 组装，随设置里的 creativity 档位/语言变化
  */
 
-function extractJsonArray(text: string): unknown[] | null {
-  // 容错解析：直接 JSON、代码块内 JSON、或截取首个 [...] 段
-  const candidates: string[] = [text];
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) candidates.unshift(fence[1]);
-  const bracket = text.match(/\[[\s\S]*\]/);
-  if (bracket) candidates.push(bracket[0]);
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate.trim());
-      if (Array.isArray(parsed)) return parsed;
-    } catch {
-      // 尝试下一种
-    }
-  }
-  return null;
-}
-
 export class LlmGenAppGenerator implements GenAppGenerator {
-  private readonly suggestionCache = new Map<
-    string,
-    { expiresAt: number; value: UntrustedSuggestion[] }
-  >();
-
   constructor(private readonly env: ServerEnv) {}
 
   private ensureConfigured() {
@@ -76,65 +52,14 @@ export class LlmGenAppGenerator implements GenAppGenerator {
     input: SuggestPortInput,
     signal: AbortSignal,
   ): Promise<UntrustedSuggestion[]> {
-    const llm = this.ensureConfigured();
+    signal.throwIfAborted();
     const settings = loadGenAppsSettings(this.env);
-    const tier = creativityTier(settings.creativity);
-    const cacheKey = JSON.stringify([
-      input.query.trim().toLocaleLowerCase(),
-      input.count,
-      tier,
-      settings.appLanguage,
-      llm.provider,
-      llm.model,
-    ]);
-    const cached = this.suggestionCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.value.map((item) => ({ ...item }));
-    const prompt = buildSuggestPrompt({
+    return createFastGenAppSuggestionSeeds({
       query: input.query,
       count: input.count,
-      tier,
       language: settings.appLanguage,
+      style: creativityTier(settings.creativity),
     });
-
-    // llm-core：内部协议 → wire 协议适配（system 处理、温度支持差异都在适配层）
-    const result = await coreGenerate(
-      {
-        protocol: llm.protocol,
-        target: this.wireTarget(llm),
-        timeoutMs: 90_000,
-        maxAttempts: 2,
-        signal,
-      },
-      {
-        model: llm.model,
-        messages: [
-          { role: "system", content: prompt.system },
-          { role: "user", content: prompt.user },
-        ],
-        temperature: creativityTemperature(settings.creativity).suggest,
-        reasoningEffort: "off",
-        maxOutputTokens: 1_200,
-      },
-    );
-
-    const parsed = extractJsonArray(result.text);
-    if (!parsed) {
-      throw genAppError(
-        "invalid_model_output",
-        "Model did not return a JSON array of suggestions.",
-        422,
-        true,
-      );
-    }
-    const value = parsed as UntrustedSuggestion[];
-    if (this.suggestionCache.size >= GEN_APP_LIMITS.suggestionCacheMaxEntries) {
-      this.suggestionCache.delete(this.suggestionCache.keys().next().value ?? "");
-    }
-    this.suggestionCache.set(cacheKey, {
-      expiresAt: Date.now() + GEN_APP_LIMITS.suggestionCacheTtlMs,
-      value: value.map((item) => ({ ...item })),
-    });
-    return value;
   }
 
   async generate(
@@ -167,7 +92,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
           { role: "system", content: prompt.system },
           { role: "user", content: prompt.user },
         ],
-        temperature: creativityTemperature(settings.creativity).generate,
+        temperature: creativityGenerationTemperature(settings.creativity),
         reasoningEffort: "off",
         maxOutputTokens: 4_000,
       },
