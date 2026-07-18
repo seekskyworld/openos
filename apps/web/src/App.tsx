@@ -7,7 +7,12 @@ import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import type { BootstrapInfo, ChatMessage, LlmSettingsPublic } from "@openos/shared";
+import {
+  GEN_APP_LIMITS,
+  type BootstrapInfo,
+  type ChatMessage,
+  type LlmSettingsPublic,
+} from "@openos/shared";
 import {
   appendThreadMessage,
   createThreadApi,
@@ -883,6 +888,7 @@ export function App() {
             manager={wm}
             onRequestClose={(windowId) => void genApps.requestClose(windowId)}
             onContinue={genApps.continueContent}
+            onInteract={genApps.interact}
             meta={
               genApps.view.phase === "installing"
                 ? t("genapps.installing")
@@ -937,6 +943,7 @@ export function App() {
         allLabel={t("launcher.all")}
         emptyLabel={t("launcher.empty")}
         searchPlaceholder={t("launcher.title")}
+        searchMaxLength={GEN_APP_LIMITS.queryMaxLength}
         viewAsLabel={t("launcher.viewAs")}
         gridLabel={t("launcher.view.grid")}
         listLabel={t("launcher.view.list")}

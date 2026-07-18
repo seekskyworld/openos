@@ -1,11 +1,17 @@
 import {
   parseGenAppArtifact,
   parseGenAppError,
+  parseGenAppPatchBatch,
+  parseGenAppRuntimeResumeRequest,
   parseGenAppSuggestion,
   parseGenAppSummary,
   type GenAppDraft,
   type GenAppErrorCode,
   type GenAppLaunchBundle,
+  type GenAppInteractRequest,
+  type GenAppInteractResponse,
+  type GenAppRuntimeResumeRequest,
+  type GenAppRuntimeResumeResponse,
   type GenAppSuggestion,
   type GenAppSummary,
 } from "@openos/shared";
@@ -22,6 +28,7 @@ export class GenAppClientError extends Error {
   readonly code: GenAppErrorCode;
   readonly requestId: string;
   readonly retryable: boolean;
+  readonly details?: Record<string, unknown>;
 
   constructor(input: {
     status: number;
@@ -29,12 +36,14 @@ export class GenAppClientError extends Error {
     message: string;
     requestId: string;
     retryable: boolean;
+    details?: Record<string, unknown>;
   }) {
     super(input.message);
     this.status = input.status;
     this.code = input.code;
     this.requestId = input.requestId;
     this.retryable = input.retryable;
+    this.details = input.details;
   }
 }
 
@@ -60,6 +69,16 @@ export interface GenAppsClient {
   list(): Promise<GenAppSummary[]>;
   launch(appId: string): Promise<GenAppLaunchBundle>;
   remove(appId: string): Promise<void>;
+  interact(
+    appId: string,
+    payload: GenAppInteractRequest,
+    signal?: AbortSignal,
+  ): Promise<GenAppInteractResponse>;
+  resumeRuntime(
+    appId: string,
+    payload: GenAppRuntimeResumeRequest,
+    signal?: AbortSignal,
+  ): Promise<GenAppRuntimeResumeResponse>;
   /** agentic 进度轮询；未知 key 返回 phase=unknown */
   progress?(key: string, signal?: AbortSignal): Promise<GenAppProgress>;
   /** 运行时续生成（应用内 OpenOS.generate/update 中继） */
@@ -130,6 +149,7 @@ async function request(
       message: parsed?.message ?? `HTTP ${response.status}`,
       requestId: parsed?.requestId ?? "",
       retryable: parsed?.retryable ?? false,
+      details: parsed?.details,
     });
   }
   return body;
@@ -149,10 +169,20 @@ function parseDraft(v: unknown): GenAppDraft {
   const record = v as Record<string, unknown>;
   const summary = parseGenAppSummary(record?.summary);
   const artifact = parseGenAppArtifact(record?.artifact);
-  if (!summary || !artifact || typeof record.draftExpiresAt !== "number") {
+  if (
+    !summary ||
+    !artifact ||
+    typeof record.draftExpiresAt !== "number" ||
+    typeof record.runtimeSessionId !== "string"
+  ) {
     badPayload("draft");
   }
-  return { summary, artifact, draftExpiresAt: record.draftExpiresAt as number };
+  return {
+    summary,
+    artifact,
+    draftExpiresAt: record.draftExpiresAt as number,
+    runtimeSessionId: record.runtimeSessionId as string,
+  };
 }
 
 export class HttpGenAppsClient implements GenAppsClient {
@@ -240,6 +270,34 @@ export class HttpGenAppsClient implements GenAppsClient {
     await request(`/gen-apps/${encodeURIComponent(appId)}`, {
       method: "DELETE",
     });
+  }
+
+  async interact(
+    appId: string,
+    payload: GenAppInteractRequest,
+    signal?: AbortSignal,
+  ): Promise<GenAppInteractResponse> {
+    const body = (await request(
+      `/gen-apps/${encodeURIComponent(appId)}/interact`,
+      { method: "POST", body: JSON.stringify(payload), signal },
+    )) as Record<string, unknown>;
+    const patch = parseGenAppPatchBatch(body.patch);
+    if (!patch || typeof body.requestId !== "string") badPayload("interact");
+    return { patch, requestId: body.requestId as string };
+  }
+
+  async resumeRuntime(
+    appId: string,
+    payload: GenAppRuntimeResumeRequest,
+    signal?: AbortSignal,
+  ): Promise<GenAppRuntimeResumeResponse> {
+    const body = (await request(
+      `/gen-apps/${encodeURIComponent(appId)}/resume`,
+      { method: "POST", body: JSON.stringify(payload), signal },
+    )) as Record<string, unknown>;
+    const resumed = parseGenAppRuntimeResumeRequest(body);
+    if (!resumed || typeof body.requestId !== "string") badPayload("runtime resume");
+    return { ...resumed, requestId: body.requestId as string };
   }
 
   async generateDraftStream(

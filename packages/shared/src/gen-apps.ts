@@ -6,15 +6,21 @@
  */
 
 // ===== 版本常量（集中定义，禁止散落 magic number）=====
-export const GEN_APP_FORMAT = "html-single-file";
-export const GEN_APP_FORMAT_VERSION = 1;
-export const GEN_APP_RUNTIME_VERSION = 1;
-export const GEN_APP_POLICY_VERSION = 1;
-export const GEN_APP_PROMPT_VERSION = 1;
+export const GEN_APP_LEGACY_FORMAT = "html-single-file";
+export const GEN_APP_FORMAT = "openos-markup";
+export const GEN_APP_FORMATS = [GEN_APP_LEGACY_FORMAT, GEN_APP_FORMAT] as const;
+export type GenAppArtifactFormat = (typeof GEN_APP_FORMATS)[number];
+export const GEN_APP_FORMAT_VERSION = 2;
+export const GEN_APP_RUNTIME_VERSION = 2;
+export const GEN_APP_POLICY_VERSION = 2;
+export const GEN_APP_PROMPT_VERSION = 2;
+export const GEN_APP_UI_KIT_VERSION = 1;
 
 export const GEN_APP_LIMITS = {
   /** HTML 制品最大字节数 */
   htmlMaxBytes: 512 * 1024,
+  /** 单个声明式制品/片段允许挂载的最大元素节点数 */
+  markupNodeMaxCount: 2_000,
   /** 单次生成超时（ms） */
   generateTimeoutMs: 60_000,
   /** 同时生成任务数（多标签页/桌面+浏览器共用一个 Bridge，1 会互相饿死） */
@@ -52,7 +58,58 @@ export const GEN_APP_LIMITS = {
   continueSessionMaxCount: 300,
   /** 会话记忆：闲置多久回收（ms） */
   continueSessionTtlMs: 30 * 60 * 1000,
+  /** V2 局部补丁 */
+  runtimePatchMaxBytes: 32 * 1024,
+  runtimeEventValueMaxLength: 2_000,
+  runtimeInteractMaxPerMinute: 30,
+  runtimeSessionMaxCount: 300,
+  runtimeSessionTtlMs: 30 * 60 * 1000,
+  runtimeSessionMaxTurns: 6,
+  runtimeSessionHistoryCharsPerTurn: 4_000,
+  /** 候选缓存 */
+  suggestionCacheTtlMs: 5 * 60 * 1000,
+  suggestionCacheMaxEntries: 100,
 } as const;
+
+export const GEN_APP_LOCAL_ACTIONS = [
+  "tabs.select",
+  "toggle",
+  "modal.open",
+  "modal.close",
+  "list.select",
+  "list.add",
+  "list.remove",
+  "list.toggle",
+  "filter",
+  "sort",
+  "counter.increment",
+  "counter.decrement",
+  "calc.input",
+  "calc.evaluate",
+  "calc.clear",
+  "calc.backspace",
+  "state.set",
+  "toast",
+  "ai.generate",
+  "ai.patch",
+] as const;
+
+export type GenAppLocalAction = (typeof GEN_APP_LOCAL_ACTIONS)[number];
+
+export function isGenAppLocalAction(value: unknown): value is GenAppLocalAction {
+  return (
+    typeof value === "string" &&
+    (GEN_APP_LOCAL_ACTIONS as readonly string[]).includes(value)
+  );
+}
+
+export type GenAppInteractionMode = "hybrid" | "improv";
+
+export type GenAppDeclaredAction = {
+  elementId: string;
+  action: GenAppLocalAction;
+  targetId?: string;
+};
 
 /** 运行时续生成 intent（服务端据此选提示词模板） */
 export const GEN_APP_CONTINUE_INTENTS = [
@@ -147,11 +204,17 @@ export type GenAppSummary = {
 export type GenAppArtifact = {
   appId: string;
   revision: number;
-  format: typeof GEN_APP_FORMAT;
+  format: GenAppArtifactFormat;
   formatVersion: number;
   runtimeVersion: number;
   policyVersion: number;
+  /** V1 完整文档；V2 为带 UI Kit 的兼容回退文档 */
   html: string;
+  /** V2 声明式正文。V1 不存在。 */
+  markup?: string;
+  actions?: GenAppDeclaredAction[];
+  kitVersion?: number;
+  interactionMode?: GenAppInteractionMode;
   contentSha256: string;
   sizeBytes: number;
 };
@@ -160,12 +223,56 @@ export type GenAppDraft = {
   summary: GenAppSummary;
   artifact: GenAppArtifact;
   draftExpiresAt: number;
+  runtimeSessionId: string;
 };
 
 export type GenAppLaunchBundle = {
   summary: GenAppSummary;
   artifact: GenAppArtifact;
   runtimeSessionId: string;
+};
+
+export type GenAppRuntimeEvent = {
+  type: "click" | "input" | "change";
+  targetId: string;
+  action: string;
+  value?: string;
+  checked?: boolean;
+  currentHtml?: string;
+};
+
+export type GenAppPatchOperation = {
+  op: "replace";
+  targetId: string;
+  html: string;
+};
+
+export type GenAppPatchBatch = {
+  baseRevision: number;
+  revision: number;
+  ops: [GenAppPatchOperation];
+};
+
+export type GenAppInteractRequest = {
+  runtimeSessionId: string;
+  baseRevision: number;
+  event: GenAppRuntimeEvent;
+};
+
+export type GenAppInteractResponse = {
+  patch: GenAppPatchBatch;
+  requestId: string;
+};
+
+export type GenAppRuntimeResumeRequest = {
+  runtimeSessionId: string;
+  revision: number;
+  markup: string;
+  interactionMode: GenAppInteractionMode;
+};
+
+export type GenAppRuntimeResumeResponse = GenAppRuntimeResumeRequest & {
+  requestId: string;
 };
 
 // ===== 请求 =====
@@ -277,23 +384,140 @@ export function parseGenAppArtifact(v: unknown): GenAppArtifact | null {
   if (!isRecord(v)) return null;
   if (!isNonEmptyString(v.appId, 80)) return null;
   if (typeof v.revision !== "number") return null;
-  if (v.format !== GEN_APP_FORMAT) return null;
+  if (!(GEN_APP_FORMATS as readonly unknown[]).includes(v.format)) return null;
   if (typeof v.formatVersion !== "number") return null;
   if (typeof v.runtimeVersion !== "number") return null;
   if (typeof v.policyVersion !== "number") return null;
-  if (typeof v.html !== "string" || v.html.length === 0) return null;
+  if (typeof v.html !== "string") return null;
   if (!isNonEmptyString(v.contentSha256, 80)) return null;
   if (typeof v.sizeBytes !== "number") return null;
+  const format = v.format as GenAppArtifactFormat;
+  const markup = typeof v.markup === "string" ? v.markup : undefined;
+  if (format === GEN_APP_LEGACY_FORMAT && v.html.length === 0) return null;
+  if (format === GEN_APP_FORMAT && (!markup || markup.length > GEN_APP_LIMITS.htmlMaxBytes)) {
+    return null;
+  }
+  const interactionMode: GenAppInteractionMode | undefined =
+    v.interactionMode === "hybrid" || v.interactionMode === "improv"
+      ? v.interactionMode
+      : undefined;
+  const actions = Array.isArray(v.actions)
+    ? v.actions
+        .map((entry): GenAppDeclaredAction | null => {
+          if (!isRecord(entry)) return null;
+          if (!isNonEmptyString(entry.elementId, 120)) return null;
+          if (!isGenAppLocalAction(entry.action)) return null;
+          return {
+            elementId: entry.elementId,
+            action: entry.action,
+            targetId:
+              typeof entry.targetId === "string" ? entry.targetId : undefined,
+          };
+        })
+        .filter((entry): entry is GenAppDeclaredAction => entry !== null)
+    : undefined;
   return {
     appId: v.appId,
     revision: v.revision,
-    format: GEN_APP_FORMAT,
+    format,
     formatVersion: v.formatVersion,
     runtimeVersion: v.runtimeVersion,
     policyVersion: v.policyVersion,
     html: v.html,
+    markup,
+    actions,
+    kitVersion: typeof v.kitVersion === "number" ? v.kitVersion : undefined,
+    interactionMode,
     contentSha256: v.contentSha256,
     sizeBytes: v.sizeBytes,
+  };
+}
+
+export function parseGenAppRuntimeEvent(value: unknown): GenAppRuntimeEvent | null {
+  if (!isRecord(value)) return null;
+  if (value.type !== "click" && value.type !== "input" && value.type !== "change") {
+    return null;
+  }
+  if (!isNonEmptyString(value.targetId, 120)) return null;
+  if (!isNonEmptyString(value.action, 120)) return null;
+  const stringValue =
+    typeof value.value === "string"
+      ? value.value.slice(0, GEN_APP_LIMITS.runtimeEventValueMaxLength)
+      : undefined;
+  const currentHtml =
+    typeof value.currentHtml === "string"
+      ? value.currentHtml.slice(0, GEN_APP_LIMITS.continueCurrentHtmlMaxLength)
+      : undefined;
+  return {
+    type: value.type,
+    targetId: value.targetId,
+    action: value.action,
+    value: stringValue,
+    checked: typeof value.checked === "boolean" ? value.checked : undefined,
+    currentHtml,
+  };
+}
+
+export function parseGenAppPatchBatch(value: unknown): GenAppPatchBatch | null {
+  if (!isRecord(value)) return null;
+  if (
+    !Number.isInteger(value.baseRevision) ||
+    !Number.isInteger(value.revision) ||
+    (value.baseRevision as number) < 0 ||
+    value.revision !== (value.baseRevision as number) + 1
+  ) {
+    return null;
+  }
+  if (!Array.isArray(value.ops) || value.ops.length !== 1) return null;
+  const operation = value.ops[0];
+  if (!isRecord(operation) || operation.op !== "replace") return null;
+  if (!isNonEmptyString(operation.targetId, 120)) return null;
+  if (!isNonEmptyString(operation.html, GEN_APP_LIMITS.runtimePatchMaxBytes)) {
+    return null;
+  }
+  return {
+    baseRevision: value.baseRevision as number,
+    revision: value.revision as number,
+    ops: [
+      {
+        op: "replace",
+        targetId: operation.targetId,
+        html: operation.html,
+      },
+    ],
+  };
+}
+
+export function parseGenAppInteractRequest(value: unknown): GenAppInteractRequest | null {
+  if (!isRecord(value)) return null;
+  if (!isNonEmptyString(value.runtimeSessionId, 120)) return null;
+  if (!Number.isInteger(value.baseRevision) || (value.baseRevision as number) < 0) {
+    return null;
+  }
+  const event = parseGenAppRuntimeEvent(value.event);
+  if (!event) return null;
+  return {
+    runtimeSessionId: value.runtimeSessionId,
+    baseRevision: value.baseRevision as number,
+    event,
+  };
+}
+
+export function parseGenAppRuntimeResumeRequest(
+  value: unknown,
+): GenAppRuntimeResumeRequest | null {
+  if (!isRecord(value)) return null;
+  if (!isNonEmptyString(value.runtimeSessionId, 120)) return null;
+  if (!Number.isInteger(value.revision) || (value.revision as number) < 1) return null;
+  if (!isNonEmptyString(value.markup, GEN_APP_LIMITS.htmlMaxBytes)) return null;
+  if (value.interactionMode !== "hybrid" && value.interactionMode !== "improv") {
+    return null;
+  }
+  return {
+    runtimeSessionId: value.runtimeSessionId,
+    revision: value.revision as number,
+    markup: value.markup,
+    interactionMode: value.interactionMode,
   };
 }
 

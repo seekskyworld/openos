@@ -1,4 +1,9 @@
-import type { GenAppContinueIntent } from "@openos/shared";
+import type {
+  GenAppArtifactFormat,
+  GenAppContinueIntent,
+  GenAppRuntimeEvent,
+} from "@openos/shared";
+import { GEN_APP_LEGACY_FORMAT } from "@openos/shared";
 import type { CreativityTier, GenAppLanguage } from "./gen-app-settings.js";
 
 const LANGUAGE_GUIDANCE: Record<GenAppLanguage, string> = {
@@ -57,30 +62,26 @@ export function buildGeneratePrompt(input: {
   language: GenAppLanguage;
 }): { system: string; user: string } {
   const system = [
-    "你是资深前端工程师，为 OpenOS 生成一个可直接运行的单文件网页小应用。",
-    "输出要求：只输出一个完整 HTML 文档（可用 ```html 代码块包裹），不要任何解释文字。",
+    "你是 OpenOS 声明式应用设计器。宿主已经预载 macOS 风格 UI Kit、状态存储和通用交互运行时。",
+    "输出要求：只输出可放进 <body> 的 HTML 标记片段，不要代码块围栏，不要解释。",
     "硬性约束：",
-    "1. 单文件：所有 CSS/JS 内联在文档中；禁止任何外部资源加载（script src、link href、图片/字体外链、fetch/XHR/WebSocket 一律不写）；URL 仅可作为纯文本数据出现（如书签列表文案），不得用于加载资源，也不得写进 <a href>（沙箱禁导航，点了没反应——需要跳转用 data-href + 事件委托）；",
-    "2. 功能必须真实可用，不是静态摆设：每个按钮/输入都必须绑定事件（addEventListener）并产生可见反馈；脚本放在 </body> 前直接执行；脚本必须零运行时错误——引用的每个 id/选择器都必须在文档中真实存在，任何一处抛错都会让整个应用点不动；",
-    "2b. 沙箱限制（违反会导致点击看似无效）：应用运行在禁止表单提交、禁止弹窗的沙箱 iframe 中——禁止使用 <form> 的提交行为与 type=submit（点击会被浏览器吞掉），按钮一律 type=\"button\" 并用 click 事件处理；禁止 alert/confirm/prompt（沙箱内不会弹出），所有提示、结果、确认一律渲染在页面内；",
-    "3. UI 参考 macOS 审美：系统字体栈、圆角、克制的配色、支持小窗口（最小 400×360）自适应；",
-    "4. 应用运行在 OpenOS 的真实窗口内部——窗口边框、标题栏、红黄绿交通灯按钮由系统提供。因此绝对禁止：自己绘制窗口外壳/标题栏/红黄绿圆点/关闭最小化按钮；把内容做成居中悬浮的『窗口卡片』；给最外层加大圆角+投影模拟窗口；绘制桌面壁纸背景。正文内容应直接铺满整个视口（html,body{height:100%;margin:0}）。",
-    "5. 数据只存内存变量（刷新丢失可接受），不使用 localStorage/cookie；",
-    "6. 不引入框架，原生 HTML/CSS/JS 完成；",
+    "1. 禁止输出 <html>/<head>/<body>/<style>/<script>/<link>/<meta>/<form>/<iframe>/<svg>；禁止任何 on* 事件属性、href/src、外链、CSS 和 JavaScript。",
+    "2. 所有可点击或可变元素必须有稳定、语义化、嵌套粒度尽量细的唯一 id。button 一律 type=\"button\"。",
+    "3. 所有按钮必须声明 data-action；需要操作另一个元素时同时声明 data-target=\"目标id\"。输入来源可用 data-source，按钮值用 data-value。",
+    "4. 优先使用宿主本地行为；只有确实需要模型理解/生成内容时才用 ai.generate 或 ai.patch。",
+    "5. 不绘制窗口外壳、标题栏、红黄绿圆点、壁纸或居中假窗口；最外层直接使用 class=\"os-app\" 铺满内容区。",
+    "6. 首次只生成可用骨架和核心内容，深层内容按需生成；标记保持精简，避免重复占位数据。",
     `7. 应用定位风格：${TIER_GUIDANCE[input.tier]}`,
     `8. ${LANGUAGE_GUIDANCE[input.language]}`,
-    "代码质量：语义化结构、事件用 addEventListener、避免全局污染。",
     "",
-    "【生成式运行时（重要能力）】",
-    "环境已注入 window.OpenOS.generate({ intent, prompt, context? }) → Promise<HTML片段字符串>，可在运行时让 AI 继续生成内容。",
-    "核心原则：不要一次性生成完所有内容——首次只做应用骨架与核心交互，深层内容留到用户真正触达时用 OpenOS.generate 按需生成。",
-    "intent 取值：browse（生成完整网页内容，如浏览器地址栏导航）、panel（按需生成设置面板/弹窗等界面区块）、search（生成搜索结果列表）、content（生成一段文章/数据等内容）。",
-    "调用模式：async 事件处理里 const html = await OpenOS.generate({intent:'browse', prompt: url}); container.innerHTML = html;",
-    "适用：浏览器式导航、点开才需要的面板、搜索结果、详情页、下一章内容。不适用：计算、状态更新等本地 JS 能完成的事。",
-    "要求：调用期间必须渲染页面内 loading 态；失败（reject）时展示页面内错误提示并允许重试；返回片段直接插入容器即可。",
-    "browse 类应用（浏览器等）：生成的页面片段里可点击的链接会带 data-href 属性，用事件委托拦截 click 后再次调用 OpenOS.generate({intent:'browse', prompt: 该href}) 实现继续跳转。",
-    "会话记忆：同一个 sessionId 的多次调用会共享上下文（模型记得之前生成过什么），默认按 intent 自动分组——单地址栏浏览器无需关心 sessionId；只有需要多个并行独立会话（如多标签页）时才用不同 sessionId 区分：OpenOS.generate({intent, prompt, sessionId:'tab-2'})。",
-    "局部更新（比整块重新生成更快）：window.OpenOS.update({ targetId, instruction, context? }) → Promise<string>，只重新生成并原地替换某个已渲染元素（用其 id 定位），无需重建整个容器。适用：改一个卡片的状态、局部刷新一个列表项、按用户反馈微调某个区块的样式或文案。",
+    "【UI Kit 速查】",
+    "布局：os-app / os-split / os-sidebar / os-main / os-toolbar / os-row / os-column / os-fill / os-grid / os-section。",
+    "控件：os-button os-primary、os-icon-button、os-input、os-select、os-textarea、os-search、os-tabs/os-tab/os-tab-panel、os-list/os-list-item、os-card、os-table、os-modal/os-modal-dialog、os-status、os-badge、os-empty、os-progress。",
+    "本地动作：tabs.select、toggle、modal.open、modal.close、list.select、list.add、list.remove、list.toggle、filter、sort、counter.increment、counter.decrement、calc.input、calc.evaluate、calc.clear、calc.backspace、state.set、toast。",
+    "生成动作：ai.generate 用于搜索/浏览/详情等新内容；ai.patch 用于修改当前最深层带 id 区块。",
+    "示例：<button id=\"tab-notes\" class=\"os-tab\" data-action=\"tabs.select\" data-target=\"panel-notes\" type=\"button\">笔记</button>。",
+    "示例：<button id=\"search-action\" class=\"os-button os-primary\" data-action=\"ai.generate\" data-target=\"results\" data-source=\"search-input\" type=\"button\">搜索</button>。",
+    "示例：计算器数字键 data-action=\"calc.input\" data-target=\"display\" data-value=\"7\"；等号使用 calc.evaluate。",
   ].join("\n");
 
   const user = JSON.stringify({
@@ -93,15 +94,25 @@ export function buildGeneratePrompt(input: {
 
 const CONTINUE_INTENT_GUIDANCE: Record<GenAppContinueIntent, string> = {
   browse:
-    "你是这个生成式浏览器的网页引擎。为给定的 URL 或搜索词生成一个完整、可读、内容丰富的网页正文片段（虚构但真实可信，风格贴合该 URL 所暗示的站点）。页内所有可点击链接一律写成 <a data-href=\"目标url\">文字</a>（不要 href 属性），供宿主应用拦截后继续生成跳转。",
+    "为给定 URL 或搜索词生成完整、可读、内容丰富的网页正文片段。可点击链接使用 id + data-href + data-action=\"ai.generate\"，不要 href。",
   panel:
-    "为宿主应用生成一个内嵌面板/弹窗界面片段，视觉风格与 macOS 审美一致（系统字体栈、圆角、克制配色）。控件需绑定行为的，内联 <script> 写在片段末尾。",
+    "生成内嵌面板或弹窗标记，使用 os-modal/os-modal-dialog 与 data-action，不输出脚本。",
   search:
     "为给定的搜索词生成一组真实可信的搜索结果列表片段（标题、摘要、来源），链接一律用 data-href 属性。",
   content:
     "为给定主题生成一段高质量的内容片段（文章/数据/列表等），排版干净可读。",
   update:
     "你会收到一个界面元素当前的完整标记（含其 id 与内部结构）和一句修改指令。只输出该元素修改后的完整替换标记（同一个根元素，保留原 id，除非指令明确要求更换 id），不要输出周围的其他元素、不要解释、不要代码块围栏。视觉风格必须与现有界面保持一致。",
+};
+
+const LEGACY_CONTINUE_INTENT_GUIDANCE: Record<GenAppContinueIntent, string> = {
+  browse:
+    "为给定 URL 或搜索词生成完整可读的网页正文片段；页内链接使用 data-href，应用会继续调用 OpenOS.generate。",
+  panel: "生成与当前应用风格一致的内嵌面板或弹窗片段，并在需要时内联交互脚本。",
+  search: "生成真实可信的搜索结果列表片段，链接使用 data-href。",
+  content: "为给定主题生成高质量内容片段。",
+  update:
+    "只输出目标元素修改后的完整替换标记，保留根 id；可以保留该元素所需的内联样式和脚本。",
 };
 
 /**
@@ -120,21 +131,34 @@ export function buildContinuePrompt(input: {
   targetId?: string;
   currentHtml?: string;
   language: GenAppLanguage;
+  format: GenAppArtifactFormat;
 }): { system: string; user: string } {
-  const system = [
-    `你在为 OpenOS 应用「${input.appName}」（${input.appDescription}）运行时生成增量内容。`,
-    "输出要求：只输出一段 HTML 片段（不含 <html>/<head>/<body> 外壳，可含 <style>/<script>），不要任何解释文字，不要代码块围栏。",
-    "硬性约束：",
-    "1. 禁止任何外部资源（script src、link href、图片外链、fetch/XHR/WebSocket）；",
-    "2. 沙箱限制：禁止 <form> 提交与 type=submit，按钮一律 type=\"button\"；禁止 alert/confirm/prompt；",
-    "3. 片段将被直接插入应用容器，样式作用域尽量收敛（避免覆盖宿主全局样式）；",
-    `4. 任务：${CONTINUE_INTENT_GUIDANCE[input.intent]}`,
-    `5. ${LANGUAGE_GUIDANCE[input.language]}`,
-    "6. 如果本次对话此前已经生成过内容，你会在上文看到——请与之前生成的内容保持一致（同一个虚构网站的结构、同一批数据），不要凭空改变已经确立的设定。",
-  ].join("\n");
+  const legacy = input.format === GEN_APP_LEGACY_FORMAT;
+  const system = legacy
+    ? [
+        `你在为 OpenOS V1 应用「${input.appName}」（${input.appDescription}）维护同一个窗口会话。`,
+        "只输出一段 HTML fragment，不含 html/head/body 外壳，不要解释或围栏。允许该 V1 应用所需的内联 style/script。",
+        "硬性约束：禁止外链资源、fetch/XHR/WebSocket、form 提交、alert/confirm/prompt；按钮 type=button。",
+        "保持此前的 CSS 前缀、事件接线、品牌、数据和布局；修改现有区块时保留目标根 id。",
+        LANGUAGE_GUIDANCE[input.language],
+      ].join("\n")
+    : [
+        `你在为 OpenOS 应用「${input.appName}」（${input.appDescription}）维护同一个窗口会话。`,
+        "输出只允许声明式 HTML 片段，不含 html/head/body/style/script，不要解释或围栏。",
+        "硬性约束：",
+        "1. 禁止脚本、样式、on* 属性、form、外链和 href/src；使用 os-* UI Kit 与 data-action。",
+        "2. 所有可点击/可变元素都要有稳定 id；按钮 type=button。",
+        "3. 修改现有区块时，只返回最深层需要变化的那一个根元素并保留其 id。",
+        "4. 保持本窗口此前确立的品牌、数据和布局，不要重新发明。",
+        `5. ${LANGUAGE_GUIDANCE[input.language]}`,
+      ].join("\n");
 
   const user = JSON.stringify({
     生成指令: input.prompt,
+    任务类型: input.intent,
+    任务要求: legacy
+      ? LEGACY_CONTINUE_INTENT_GUIDANCE[input.intent]
+      : CONTINUE_INTENT_GUIDANCE[input.intent],
     ...(input.context ? { 应用上下文: input.context } : {}),
     ...(input.intent === "update" && input.targetId
       ? { 目标元素id: input.targetId }
@@ -145,4 +169,63 @@ export function buildContinuePrompt(input: {
     应用来源搜索词: input.sourceQuery,
   });
   return { system, user };
+}
+
+/** V2 交互只允许单目标 replace；revision 由服务端最终签发。 */
+export function buildRuntimePatchPrompt(input: {
+  appName: string;
+  appDescription: string;
+  sourceQuery: string;
+  baseRevision: number;
+  event: GenAppRuntimeEvent;
+  declaredAction: string;
+  actionElementHtml: string;
+  patchTargetId: string;
+  patchTargetHtml: string;
+  dataHref?: string;
+  dataPrompt?: string;
+  language: GenAppLanguage;
+}): { system: string; user: string } {
+  const system = [
+    "你是 OpenOS V2 的声明式 UI 补丁引擎。你维护同一个窗口会话，只修改用户本次交互真正影响的最小区块。",
+    "只输出原始 JSON 对象，不要 Markdown、解释或代码块。",
+    "输出 schema：{\"baseRevision\":整数,\"ops\":[{\"op\":\"replace\",\"targetId\":\"目标id\",\"html\":\"替换元素完整HTML\"}]}。",
+    "硬性约束：",
+    "1. ops 必须恰好一项，targetId 必须与给定补丁目标完全相同；html 必须恰好一个根元素并保留该 id。",
+    "2. 只返回最深层需要变化的元素，不返回 html/head/body/style/script/form/iframe/svg，不写 CSS、JavaScript、on*、href/src 或外链。",
+    "3. 使用 os-* UI Kit 与 data-action；所有新增可点击或可变元素必须有稳定唯一 id，按钮 type=button。",
+    "4. 保留未受影响的数据、结构和既有设定。不要重写整个应用。",
+    `5. ${LANGUAGE_GUIDANCE[input.language]}`,
+  ].join("\n");
+  const user = JSON.stringify({
+    contract: "openos-patch-batch",
+    app: {
+      name: input.appName,
+      description: input.appDescription,
+      sourceQuery: input.sourceQuery,
+    },
+    baseRevision: input.baseRevision,
+    event: input.event,
+    declaredAction: input.declaredAction,
+    actionElementHtml: input.actionElementHtml,
+    patchTarget: {
+      id: input.patchTargetId,
+      currentHtml: input.patchTargetHtml,
+    },
+    ...(input.dataHref ? { navigationTarget: input.dataHref } : {}),
+    ...(input.dataPrompt ? { instruction: input.dataPrompt } : {}),
+  });
+  return { system, user };
+}
+
+export function buildRuntimePatchRepairPrompt(input: {
+  baseRevision: number;
+  targetId: string;
+  reason: string;
+}): string {
+  return [
+    `上一条输出无效：${input.reason}`,
+    "重新输出一次，且只能输出原始 JSON 对象。",
+    `baseRevision 必须为 ${input.baseRevision}；ops 恰好一项 replace；targetId 必须为 ${JSON.stringify(input.targetId)}；html 根元素必须保留同一 id。`,
+  ].join("\n");
 }

@@ -1,5 +1,7 @@
 import {
   GEN_APP_FORMAT,
+  GEN_APP_LEGACY_FORMAT,
+  type GenAppArtifactFormat,
   type GenAppArtifact,
   type GenAppDraft,
   type GenAppLaunchBundle,
@@ -32,12 +34,14 @@ type AppRow = {
 type ArtifactRow = {
   app_id: string;
   revision: number;
+  format: string;
   format_version: number;
   runtime_version: number;
   policy_version: number;
   html: string;
   content_sha256: string;
   size_bytes: number;
+  payload_json: string | null;
 };
 
 function toSummary(row: AppRow): GenAppSummary {
@@ -55,14 +59,37 @@ function toSummary(row: AppRow): GenAppSummary {
 }
 
 function toArtifact(row: ArtifactRow): GenAppArtifact {
+  let payload: {
+    markup?: string;
+    actions?: GenAppArtifact["actions"];
+    kitVersion?: number;
+    interactionMode?: GenAppArtifact["interactionMode"];
+  } = {};
+  if (row.payload_json) {
+    try {
+      payload = JSON.parse(row.payload_json) as typeof payload;
+    } catch {
+      payload = {};
+    }
+  }
+  const format: GenAppArtifactFormat =
+    row.format === GEN_APP_FORMAT ? GEN_APP_FORMAT : GEN_APP_LEGACY_FORMAT;
   return {
     appId: row.app_id,
     revision: row.revision,
-    format: GEN_APP_FORMAT,
+    format,
     formatVersion: row.format_version,
     runtimeVersion: row.runtime_version,
     policyVersion: row.policy_version,
     html: row.html,
+    ...(format === GEN_APP_FORMAT
+      ? {
+          markup: payload.markup ?? "",
+          actions: payload.actions ?? [],
+          kitVersion: payload.kitVersion,
+          interactionMode: payload.interactionMode ?? "hybrid",
+        }
+      : {}),
     contentSha256: row.content_sha256,
     sizeBytes: row.size_bytes,
   };
@@ -104,18 +131,26 @@ export class SqliteGenAppRepository implements GenAppRepository {
         .prepare(
           `INSERT INTO gen_app_artifacts
              (app_id, revision, format, format_version, runtime_version,
-              policy_version, html, content_sha256, size_bytes)
-           VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+              policy_version, html, content_sha256, size_bytes, payload_json)
+           VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.id,
-          GEN_APP_FORMAT,
+          artifact.format,
           artifact.formatVersion,
           artifact.runtimeVersion,
           artifact.policyVersion,
           artifact.html,
           artifact.contentSha256,
           artifact.sizeBytes,
+          artifact.format === GEN_APP_FORMAT
+            ? JSON.stringify({
+                markup: artifact.markup ?? "",
+                actions: artifact.actions ?? [],
+                kitVersion: artifact.kitVersion,
+                interactionMode: artifact.interactionMode ?? "hybrid",
+              })
+            : null,
         );
     });
 
@@ -134,15 +169,20 @@ export class SqliteGenAppRepository implements GenAppRepository {
       artifact: {
         appId: input.id,
         revision: 1,
-        format: GEN_APP_FORMAT,
+        format: artifact.format,
         formatVersion: artifact.formatVersion,
         runtimeVersion: artifact.runtimeVersion,
         policyVersion: artifact.policyVersion,
         html: artifact.html,
+        markup: artifact.markup,
+        actions: artifact.actions,
+        kitVersion: artifact.kitVersion,
+        interactionMode: artifact.interactionMode,
         contentSha256: artifact.contentSha256,
         sizeBytes: artifact.sizeBytes,
       },
       draftExpiresAt,
+      runtimeSessionId: `rs-${randomUUID()}`,
     };
   }
 
@@ -200,8 +240,8 @@ export class SqliteGenAppRepository implements GenAppRepository {
       }
       const artifactRow = this.database.db
         .prepare(
-          `SELECT app_id, revision, format_version, runtime_version, policy_version,
-                  html, content_sha256, size_bytes
+          `SELECT app_id, revision, format, format_version, runtime_version, policy_version,
+                  html, content_sha256, size_bytes, payload_json
              FROM gen_app_artifacts WHERE app_id = ? AND revision = ?`,
         )
         .get(appId, row.artifact_revision) as ArtifactRow | undefined;
@@ -260,8 +300,8 @@ export class SqliteGenAppRepository implements GenAppRepository {
     }
     const artifactRow = this.database.db
       .prepare(
-        `SELECT app_id, revision, format_version, runtime_version, policy_version,
-                html, content_sha256, size_bytes
+        `SELECT app_id, revision, format, format_version, runtime_version, policy_version,
+                html, content_sha256, size_bytes, payload_json
            FROM gen_app_artifacts WHERE app_id = ? AND revision = ?`,
       )
       .get(draftId, row.artifact_revision) as ArtifactRow | undefined;
@@ -270,17 +310,27 @@ export class SqliteGenAppRepository implements GenAppRepository {
       summary: toSummary(row),
       artifact: toArtifact(artifactRow),
       draftExpiresAt: row.draft_expires_at ?? 0,
+      runtimeSessionId: `rs-${randomUUID()}`,
     };
   }
 
   findIdentity(appId: string): GenAppIdentity | null {
     const row = this.database.db
       .prepare(
-        `SELECT id, name, description, source_query
-           FROM gen_apps WHERE id = ? AND deleted_at IS NULL`,
+        `SELECT g.id, g.name, g.description, g.source_query, a.format
+           FROM gen_apps g
+           JOIN gen_app_artifacts a
+             ON a.app_id = g.id AND a.revision = g.artifact_revision
+          WHERE g.id = ? AND g.deleted_at IS NULL`,
       )
       .get(appId) as
-      | { id: string; name: string; description: string; source_query: string }
+      | {
+          id: string;
+          name: string;
+          description: string;
+          source_query: string;
+          format: string;
+        }
       | undefined;
     if (!row) return null;
     return {
@@ -288,6 +338,7 @@ export class SqliteGenAppRepository implements GenAppRepository {
       name: row.name,
       description: row.description,
       sourceQuery: row.source_query,
+      format: row.format === GEN_APP_FORMAT ? GEN_APP_FORMAT : GEN_APP_LEGACY_FORMAT,
     };
   }
 

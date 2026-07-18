@@ -1,9 +1,36 @@
 # Gen Apps（AI 生成应用）架构设计
 
-> 状态：未来方案，已完成解耦、分层与安全评审，尚未实施  
+> 状态：V1 竖切与 Hybrid Generative Runtime V2 已实施，V1 制品保持兼容
 > 归属：App 启动台搜索 -> 大模型生成应用 -> 隔离运行 -> 关闭后安装 -> 持久化复用  
 > 目标端：Electron 桌面端与浏览器端；两端共享业务模块，但运行时隔离强度允许不同  
-> 最近评审：2026-07-17
+> 最近实施：2026-07-18
+
+## Hybrid Generative Runtime V2（已实施）
+
+V2 把原先由模型一次性生成的 HTML/CSS/JavaScript 拆成三层：
+
+```text
+模型输出：openos-markup（声明式、小体积、无 CSS/JS）
+    ↓ ArtifactCompiler(parse5 清洗、动作/目标校验、版本化)
+可信 Shell：OpenOS UI Kit + ActionRuntime（随 Web bundle 预载）
+    ↓ postMessage render / event / patch
+RuntimeSession：每窗口独立 markup + revision + 有界模型历史
+```
+
+关键行为：
+
+1. 通用控件动作（tab、弹层、列表、筛选、计数、计算器、toast）在 iframe 内本地执行，不调用模型。
+2. `ai.generate` / `ai.patch` 只发送事件类型、元素 id、输入值与当前目标快照；服务端从权威会话标记重新解析动作和目标。
+3. 模型只提议一个 `replace` 操作；服务端校验 revision/target，清洗替换标记，失败时最多修复一次，再原子推进 revision。
+4. V2 iframe 只加载一次固定 Shell；流式与最终内容都通过 `postMessage` 渲染，不再随 token 重载 `srcDoc`。
+5. fantasy 档使用 `improv` 模式，未被本地运行时处理的声明式动作自动进入 AI 补丁路径。
+6. `html-single-file` V1 制品仍按旧 `srcDoc` 与 script-capable `/continue` 路径运行。
+7. 每窗口 AI patch 串行且窗口关闭会取消在途交互。服务端 revision 领先时，409
+   携带权威快照供 iframe 全量对齐；仅会话已过期时才通过 `/resume` 重新编译宿主快照并重试一次。
+
+V2 线协议不重复返回 Shell 的 CSS/JavaScript，`html` 在 V2 响应中为空，客户端使用
+`markup + kitVersion + interactionMode`。SQLite 仍保存完整兼容文档，同时在
+`gen_app_artifacts.payload_json` 保存结构化 V2 payload。
 
 ---
 
@@ -232,9 +259,13 @@ apps/server/src/gen-apps/
 | --- | --- | --- |
 | `POST` | `/api/gen-apps/suggestions` | 返回经 schema 校验的候选 |
 | `POST` | `/api/gen-apps/drafts` | 生成、编译并保存草稿；支持幂等键 |
+| `POST` | `/api/gen-apps/drafts/stream` | SSE 流式生成声明式预览并返回最终草稿 |
 | `POST` | `/api/gen-apps/:id/install` | 幂等地把草稿转换为已安装应用 |
 | `GET` | `/api/gen-apps` | 只返回 Summary 列表，不返回 HTML |
 | `POST` | `/api/gen-apps/:id/launch` | 原子读取 Artifact 并更新最近打开时间 |
+| `POST` | `/api/gen-apps/:id/interact` | V2 元素事件换取单目标 revision patch |
+| `POST` | `/api/gen-apps/:id/resume` | 重新编译宿主快照并恢复过期/分叉的 V2 会话 |
+| `POST` | `/api/gen-apps/:id/continue` | V1 兼容续生成及声明式 V2 fragment |
 | `DELETE` | `/api/gen-apps/:id` | 幂等删除草稿或已安装应用 |
 | `GET/PUT` | `/api/settings/gen-apps` | 独立读写 Gen Apps 设置 |
 
@@ -362,8 +393,9 @@ CREATE TABLE gen_app_data (
 | 项目 | 默认值 |
 | --- | --- |
 | HTML | 512 KiB |
+| 声明式元素节点 | 2,000 个 |
 | 单次生成超时 | 60 秒 |
-| 同时生成任务 | 1 个，后续按性能提高 |
+| 同时生成任务 | 2 个 |
 | 已安装应用 | 100 个 |
 | 单应用用户数据 | 1 MiB |
 | 草稿 TTL | 24 小时 |

@@ -1,4 +1,5 @@
 import type {
+  GenAppArtifactFormat,
   GenAppContinueIntent,
   GenAppDraft,
   GenAppLaunchBundle,
@@ -60,6 +61,7 @@ export type GenAppIdentity = {
   name: string;
   description: string;
   sourceQuery: string;
+  format: GenAppArtifactFormat;
 };
 
 /** 仓储端口：只接收已校验领域对象 */

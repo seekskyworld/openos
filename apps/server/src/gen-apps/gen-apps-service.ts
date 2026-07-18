@@ -1,13 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
   clampSuggestionCount,
+  GEN_APP_FORMAT,
+  GEN_APP_LEGACY_FORMAT,
   GEN_APP_LIMITS,
   GEN_APP_PROMPT_VERSION,
   isGenAppContinueIntent,
   isGenAppIconTheme,
+  type GenAppInteractRequest,
+  type GenAppInteractResponse,
   type GenAppDraft,
   type GenAppIconTheme,
   type GenAppLaunchBundle,
+  type GenAppRuntimeResumeRequest,
+  type GenAppRuntimeResumeResponse,
   type GenAppSuggestion,
   type GenAppSummary,
 } from "@openos/shared";
@@ -17,7 +23,14 @@ import { genAppError, type UntrustedSuggestion } from "./domain.js";
 import type { GenAppLanguage } from "./gen-app-settings.js";
 import type { CoreMessage } from "../llm-core/index.js";
 import { buildContinuePrompt } from "./prompt-policy.js";
-import type { GenAppGenerator, GenAppRepository } from "./ports.js";
+import { RuntimeInteractionCoordinator } from "./runtime-interaction.js";
+import { RuntimeSessionStore } from "./runtime-session-store.js";
+import { sanitizeGenAppMarkup } from "./markup-artifact.js";
+import type {
+  GenAppGenerator,
+  GenAppIdentity,
+  GenAppRepository,
+} from "./ports.js";
 
 /**
  * GenApps 应用服务：用例编排、状态转换、幂等、配额。
@@ -75,6 +88,21 @@ function sanitizeSuggestion(
   };
 }
 
+function normalizeQuery(value: unknown): string {
+  const query = String(value ?? "").trim();
+  if (
+    query.length < GEN_APP_LIMITS.queryMinLength ||
+    query.length > GEN_APP_LIMITS.queryMaxLength
+  ) {
+    throw genAppError(
+      "validation_failed",
+      `query must be ${GEN_APP_LIMITS.queryMinLength}-${GEN_APP_LIMITS.queryMaxLength} chars.`,
+      400,
+    );
+  }
+  return query;
+}
+
 export class GenAppsService {
   private readonly generator: GenAppGenerator;
   private readonly repository: GenAppRepository;
@@ -89,6 +117,16 @@ export class GenAppsService {
   private readonly continueInFlight = new Set<string>();
   /** 续生成会话记忆：同一条续生成流跨调用保持上下文 */
   private readonly continueSessions = new ContinueSessionStore();
+  /** V2 每窗口权威 markup/revision/对话历史。 */
+  private readonly runtimeSessions: RuntimeSessionStore;
+  private readonly runtimeInteraction: RuntimeInteractionCoordinator;
+  private readonly runtimeInFlight = new Set<string>();
+  private readonly runtimeHistory = new Map<string, number[]>();
+  /** 删除目录项后，已打开的 V1/V2 窗口仍可继续到关闭。 */
+  private readonly activeIdentities = new Map<
+    string,
+    { identity: GenAppIdentity; expiresAt: number }
+  >();
 
   constructor(deps: ServiceDeps) {
     this.generator = deps.generator;
@@ -100,23 +138,19 @@ export class GenAppsService {
     this.generateTimeoutMsFn =
       deps.generateTimeoutMs ?? (() => GEN_APP_LIMITS.generateTimeoutMs);
     this.appLanguageFn = deps.appLanguage ?? (() => "auto");
+    this.runtimeSessions = new RuntimeSessionStore(this.nowFn);
+    this.runtimeInteraction = new RuntimeInteractionCoordinator({
+      generator: this.generator,
+      sessions: this.runtimeSessions,
+      language: this.appLanguageFn,
+    });
   }
 
   async suggest(
     input: { query: string; count?: number },
     context: RequestContext,
   ): Promise<GenAppSuggestion[]> {
-    const query = (input.query ?? "").trim();
-    if (
-      query.length < GEN_APP_LIMITS.queryMinLength ||
-      query.length > GEN_APP_LIMITS.queryMaxLength
-    ) {
-      throw genAppError(
-        "validation_failed",
-        `query must be ${GEN_APP_LIMITS.queryMinLength}-${GEN_APP_LIMITS.queryMaxLength} chars.`,
-        400,
-      );
-    }
+    const query = normalizeQuery(input.query);
     const count = clampSuggestionCount(
       input.count !== undefined ? input.count : this.defaultCountFn(),
     );
@@ -154,6 +188,7 @@ export class GenAppsService {
     },
   ): Promise<GenAppDraft> {
     const { suggestion } = input;
+    const query = normalizeQuery(input.query);
     if (!suggestion?.name?.trim()) {
       throw genAppError("validation_failed", "suggestion.name is required.", 400);
     }
@@ -164,7 +199,10 @@ export class GenAppsService {
 
     // 幂等：同 key 直接返回已有草稿
     const existing = this.repository.findByIdempotencyKey(key);
-    if (existing) return existing;
+    if (existing) {
+      this.registerRuntimeContext(existing);
+      return existing;
+    }
 
     if (
       this.repository.countInstalled() >= GEN_APP_LIMITS.maxInstalledApps
@@ -196,7 +234,7 @@ export class GenAppsService {
       const untrusted = await this.generator
         .generate(
           {
-            query: input.query ?? "",
+            query,
             name: suggestion.name,
             description: suggestion.description,
             onDelta: hooks?.onDelta,
@@ -225,7 +263,7 @@ export class GenAppsService {
         iconEmoji: suggestion.iconEmoji,
         iconTheme: suggestion.iconTheme,
         category: "AI",
-        sourceQuery: input.query ?? "",
+        sourceQuery: query,
         generatorProvider: untrusted.provider,
         generatorModel: untrusted.model,
         promptVersion: GEN_APP_PROMPT_VERSION,
@@ -234,6 +272,7 @@ export class GenAppsService {
         draftTtlMs: GEN_APP_LIMITS.draftTtlMs,
       });
       this.repository.rememberIdempotencyKey(key, draft.summary.id);
+      this.registerRuntimeContext(draft);
       return draft;
     } finally {
       this.activeGenerations -= 1;
@@ -261,7 +300,9 @@ export class GenAppsService {
     context: RequestContext,
   ): Promise<{ fragment: string }> {
     const appId = String(input.appId ?? "").trim();
-    const identity = appId ? this.repository.findIdentity(appId) : null;
+    const identity = appId
+      ? (this.repository.findIdentity(appId) ?? this.findActiveIdentity(appId))
+      : null;
     if (!identity) {
       throw genAppError("app_not_found", `App ${appId} not found.`, 404);
     }
@@ -349,6 +390,7 @@ export class GenAppsService {
         targetId,
         currentHtml,
         language: this.appLanguageFn(),
+        format: identity.format,
       });
       const priorMessages = this.continueSessions.get(sessionKey) ?? [];
       // 新会话：system+user 都是新增；续接会话：system 已在历史里，只新增 user
@@ -362,7 +404,10 @@ export class GenAppsService {
       const messages: CoreMessage[] = [...priorMessages, ...newTurns];
 
       const raw = await this.generator.continueContent({ intent, messages }, signal);
-      const fragment = compileFragment(raw);
+      const fragment = compileFragment(raw, {
+        allowScripts: identity.format === GEN_APP_LEGACY_FORMAT,
+        targetId: intent === "update" ? targetId : undefined,
+      });
       this.continueSessions.commit(sessionKey, newTurns, raw);
       return { fragment };
     } finally {
@@ -381,10 +426,211 @@ export class GenAppsService {
   }
 
   launch(appId: string): GenAppLaunchBundle {
-    return this.repository.loadAndTouch(appId, this.nowFn());
+    const bundle = this.repository.loadAndTouch(appId, this.nowFn());
+    this.registerRuntimeContext(bundle);
+    return bundle;
   }
 
   remove(appId: string): void {
     this.repository.remove(appId);
+  }
+
+  /** V2 AI 交互：服务端选择目标、模型提案、单次修复、编译并原子推进 revision。 */
+  async interact(
+    input: { appId: string } & GenAppInteractRequest,
+    context: RequestContext,
+  ): Promise<GenAppInteractResponse> {
+    const appId = String(input.appId ?? "").trim();
+    const activeSession = appId
+      ? this.runtimeSessions.read(input.runtimeSessionId, appId)
+      : null;
+    const identity = appId
+      ? (this.repository.findIdentity(appId) ??
+        activeSession?.identity ??
+        this.findActiveIdentity(appId))
+      : null;
+    if (!identity || identity.format !== GEN_APP_FORMAT) {
+      throw genAppError("app_not_found", `V2 app ${appId} not found.`, 404);
+    }
+    if (!activeSession) {
+      throw genAppError(
+        "invalid_transition",
+        "Runtime session expired or does not belong to this app.",
+        409,
+        true,
+      );
+    }
+    if (activeSession.revision !== input.baseRevision) {
+      throw genAppError(
+        "invalid_transition",
+        `Revision conflict: expected ${activeSession.revision}, received ${input.baseRevision}.`,
+        409,
+        true,
+        {
+          currentRevision: activeSession.revision,
+          currentMarkup: activeSession.markup,
+        },
+      );
+    }
+    if (this.runtimeInFlight.has(input.runtimeSessionId)) {
+      throw genAppError("validation_failed", "Another interaction for this window is in progress.", 429, true);
+    }
+    this.consumeRuntimeQuota(appId);
+
+    this.runtimeInFlight.add(input.runtimeSessionId);
+    try {
+      const patch = await this.runtimeInteraction.execute(
+        {
+          identity,
+          request: {
+            runtimeSessionId: input.runtimeSessionId,
+            baseRevision: input.baseRevision,
+            event: input.event,
+          },
+        },
+        context.signal,
+      );
+      return {
+        requestId: context.requestId,
+        patch,
+      };
+    } finally {
+      this.runtimeInFlight.delete(input.runtimeSessionId);
+    }
+  }
+
+  /**
+   * Rare-path recovery for an expired session or a response lost after commit.
+   * The host resubmits its last compiled snapshot; the server recompiles it before
+   * replacing the in-memory session and intentionally resets model history.
+   */
+  resumeRuntime(
+    input: { appId: string } & GenAppRuntimeResumeRequest,
+    requestId: string,
+  ): GenAppRuntimeResumeResponse {
+    const appId = String(input.appId ?? "").trim();
+    const runtimeSessionId = String(input.runtimeSessionId ?? "").trim();
+    if (
+      !runtimeSessionId ||
+      runtimeSessionId.length > 120 ||
+      !Number.isInteger(input.revision) ||
+      input.revision < 1 ||
+      (input.interactionMode !== "hybrid" && input.interactionMode !== "improv")
+    ) {
+      throw genAppError("validation_failed", "Invalid runtime session snapshot.", 400);
+    }
+    const identity = appId
+      ? (this.repository.findIdentity(appId) ?? this.findActiveIdentity(appId))
+      : null;
+    if (!identity || identity.format !== GEN_APP_FORMAT) {
+      throw genAppError("app_not_found", `V2 app ${appId} not found.`, 404);
+    }
+    if (this.runtimeInFlight.has(runtimeSessionId)) {
+      throw genAppError(
+        "validation_failed",
+        "Cannot resume a runtime interaction while it is in progress.",
+        429,
+        true,
+      );
+    }
+    const existing = this.runtimeSessions.inspect(runtimeSessionId);
+    if (existing) {
+      if (existing.appId !== appId) {
+        throw genAppError("invalid_transition", "Runtime session belongs to another app.", 409);
+      }
+      throw genAppError(
+        "invalid_transition",
+        "Runtime session is still active; use its authoritative revision.",
+        409,
+        true,
+        {
+          currentRevision: existing.revision,
+          currentMarkup: existing.markup,
+        },
+      );
+    }
+    const compiled = sanitizeGenAppMarkup(input.markup);
+    const session = this.runtimeSessions.register({
+      id: runtimeSessionId,
+      appId,
+      revision: input.revision,
+      markup: compiled.markup,
+      interactionMode: input.interactionMode,
+      identity,
+    });
+    return {
+      requestId,
+      runtimeSessionId: session.id,
+      revision: session.revision,
+      markup: session.markup,
+      interactionMode: session.interactionMode,
+    };
+  }
+
+  private registerRuntimeContext(value: GenAppDraft | GenAppLaunchBundle): void {
+    const { artifact } = value;
+    const identity = this.repository.findIdentity(value.summary.id);
+    if (!identity) return;
+    this.rememberActiveIdentity(identity);
+    if (
+      identity.format !== GEN_APP_FORMAT ||
+      artifact.format !== GEN_APP_FORMAT ||
+      !artifact.markup
+    ) {
+      return;
+    }
+    this.runtimeSessions.register({
+      id: value.runtimeSessionId,
+      appId: value.summary.id,
+      revision: artifact.revision,
+      markup: artifact.markup,
+      interactionMode: artifact.interactionMode === "improv" ? "improv" : "hybrid",
+      identity,
+    });
+  }
+
+  private consumeRuntimeQuota(appId: string): void {
+    const now = this.nowFn();
+    const cutoff = now - 60_000;
+    const recent = (this.runtimeHistory.get(appId) ?? []).filter((at) => at > cutoff);
+    if (recent.length >= GEN_APP_LIMITS.runtimeInteractMaxPerMinute) {
+      throw genAppError(
+        "storage_quota_exceeded",
+        `Runtime interaction rate limit (${GEN_APP_LIMITS.runtimeInteractMaxPerMinute}/min) reached.`,
+        429,
+        true,
+      );
+    }
+    recent.push(now);
+    this.runtimeHistory.set(appId, recent);
+  }
+
+  private rememberActiveIdentity(identity: GenAppIdentity): void {
+    const now = this.nowFn();
+    for (const [appId, entry] of this.activeIdentities) {
+      if (entry.expiresAt <= now) this.activeIdentities.delete(appId);
+    }
+    if (
+      this.activeIdentities.size >= GEN_APP_LIMITS.runtimeSessionMaxCount &&
+      !this.activeIdentities.has(identity.id)
+    ) {
+      const oldest = this.activeIdentities.keys().next().value;
+      if (oldest) this.activeIdentities.delete(oldest);
+    }
+    this.activeIdentities.delete(identity.id);
+    this.activeIdentities.set(identity.id, {
+      identity: { ...identity },
+      expiresAt: now + GEN_APP_LIMITS.runtimeSessionTtlMs,
+    });
+  }
+
+  private findActiveIdentity(appId: string): GenAppIdentity | null {
+    const entry = this.activeIdentities.get(appId);
+    if (!entry) return null;
+    if (entry.expiresAt <= this.nowFn()) {
+      this.activeIdentities.delete(appId);
+      return null;
+    }
+    return { ...entry.identity };
   }
 }

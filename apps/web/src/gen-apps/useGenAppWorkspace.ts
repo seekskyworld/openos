@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  GenAppArtifactFormat,
   GenAppDraft,
+  GenAppInteractRequest,
+  GenAppInteractResponse,
+  GenAppInteractionMode,
+  GenAppPatchBatch,
   GenAppSuggestion,
   GenAppSummary,
+} from "@openos/shared";
+import {
+  GEN_APP_FORMAT,
+  GEN_APP_LEGACY_FORMAT,
+  GEN_APP_LIMITS,
 } from "@openos/shared";
 import {
   GenAppClientError,
@@ -22,6 +32,93 @@ const SUGGEST_DEBOUNCE_MS = 500;
 /** 节流保底：持续输入超过该间隔仍强制请求一次 */
 const SUGGEST_MAX_WAIT_MS = 2000;
 
+const LOCAL_APP_CATALOG: Array<{
+  name: string;
+  description: string;
+  iconEmoji: string;
+  iconTheme: GenAppSummary["iconTheme"];
+  keywords: string;
+}> = [
+  { name: "计算器", description: "快速计算与换算", iconEmoji: "🧮", iconTheme: "orange", keywords: "计算 数学 calculator" },
+  { name: "备忘录", description: "记录想法与清单", iconEmoji: "📝", iconTheme: "orange", keywords: "笔记 记录 备忘 note todo 清单" },
+  { name: "专注计时", description: "番茄钟与倒计时", iconEmoji: "⏱️", iconTheme: "red", keywords: "时间 时钟 计时 番茄 timer focus" },
+  { name: "单位换算", description: "长度重量温度换算", iconEmoji: "🔁", iconTheme: "purple", keywords: "换算 单位 convert conversion" },
+  { name: "天气", description: "城市天气与预报", iconEmoji: "🌤️", iconTheme: "blue", keywords: "天气 weather 气温 预报" },
+  { name: "词典", description: "查词、释义与例句", iconEmoji: "📖", iconTheme: "graphite", keywords: "词典 翻译 单词 dictionary translate" },
+  { name: "色板", description: "配色与颜色代码", iconEmoji: "🎨", iconTheme: "pink", keywords: "颜色 色板 取色 color palette" },
+  { name: "汇率", description: "常用货币快速换算", iconEmoji: "💱", iconTheme: "green", keywords: "汇率 货币 外汇 currency money" },
+];
+
+function localSuggestions(query: string): GenAppSuggestion[] {
+  const normalized = query.trim().toLocaleLowerCase();
+  const matches = LOCAL_APP_CATALOG.filter((item) =>
+    `${item.name} ${item.description} ${item.keywords}`.toLocaleLowerCase().includes(normalized),
+  ).slice(0, 3);
+  if (matches.length === 0) {
+    let hash = 0;
+    for (const char of normalized) hash = Math.imul(hash ^ char.codePointAt(0)!, 16777619);
+    return [{
+      id: `local-exact-${(hash >>> 0).toString(36)}`,
+      name: query.trim().slice(0, 60),
+      description: "按当前需求生成应用",
+      iconEmoji: "✨",
+      iconTheme: "blue",
+    }];
+  }
+  return matches.map((item) => ({
+    id: `local-${item.name}`,
+    name: item.name,
+    description: item.description,
+    iconEmoji: item.iconEmoji,
+    iconTheme: item.iconTheme,
+  }));
+}
+
+function mergeSuggestions(
+  immediate: GenAppSuggestion[],
+  remote: GenAppSuggestion[],
+): GenAppSuggestion[] {
+  const names = new Set<string>();
+  return [...immediate, ...remote].filter((item) => {
+    const key = item.name.trim().toLocaleLowerCase();
+    if (!key || names.has(key)) return false;
+    names.add(key);
+    return true;
+  }).slice(0, GEN_APP_LIMITS.suggestionCountMax);
+}
+
+function applyMarkupPatch(markup: string, patch: GenAppPatchBatch): string {
+  const container = document.createElement("template");
+  container.innerHTML = markup;
+  const operation = patch.ops[0];
+  const current = Array.from(container.content.querySelectorAll<HTMLElement>("[id]"))
+    .find((node) => node.id === operation.targetId);
+  if (!current) return markup;
+  const replacementTemplate = document.createElement("template");
+  replacementTemplate.innerHTML = operation.html.trim();
+  const replacement = replacementTemplate.content.firstElementChild;
+  if (!(replacement instanceof HTMLElement) || replacement.id !== operation.targetId) {
+    return markup;
+  }
+  current.replaceWith(replacement);
+  return container.innerHTML;
+}
+
+export type GenAppPatchDelivery =
+  | {
+      kind: "patch";
+      patch: GenAppPatchBatch;
+      /** Authoritative post-patch markup, used only if the iframe asks to resynchronize. */
+      markup: string;
+    }
+  | {
+      /** Server was ahead after a lost response; apply its authoritative snapshot. */
+      kind: "render";
+      revision: number;
+      markup: string;
+      error: string;
+    };
+
 export type RunningGenApp = {
   /** 窗口 id：genapp-<appId>（流式期为 genapp-<幂等键>） */
   windowId: string;
@@ -31,6 +128,14 @@ export type RunningGenApp = {
   iconEmoji: string;
   iconTheme: GenAppSummary["iconTheme"];
   html: string;
+  format: GenAppArtifactFormat;
+  /** V2 声明式内容；流式期随 delta 更新。 */
+  markup: string;
+  runtimeSessionId: string;
+  revision: number;
+  interactionMode: GenAppInteractionMode;
+  /** 仅全量 render/流式快照递增；局部 patch 不递增，避免覆盖 iframe 本地状态。 */
+  renderSequence: number;
   /** draft = 关闭时需安装；installed = 直接关闭 */
   mode: "draft" | "installed";
   /** streaming = 生成中渐进预览（脚本禁用）；ready = 编译制品可交互 */
@@ -68,10 +173,16 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
   const [running, setRunning] = useState<RunningGenApp[]>([]);
 
   const queryRef = useRef("");
+  const localSuggestionsRef = useRef<GenAppSuggestion[]>([]);
+  const runningRef = useRef<RunningGenApp[]>([]);
   const suggestAbort = useRef<AbortController | null>(null);
   /** 单调请求序号：旧响应不得覆盖新响应 */
   const suggestSeq = useRef(0);
   const progressTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
 
   const stopProgressPoll = useCallback(() => {
     if (progressTimer.current != null) {
@@ -126,11 +237,17 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
       .suggest(trimmed, undefined, abort.signal)
       .then((result) => {
         if (seq !== suggestSeq.current) return; // 旧响应丢弃
-        setSuggestions(result);
+        setSuggestions(mergeSuggestions(localSuggestionsRef.current, result));
         setPhase("idle");
       })
       .catch((err: unknown) => {
         if (abort.signal.aborted || seq !== suggestSeq.current) return;
+        if (localSuggestionsRef.current.length > 0) {
+          setSuggestions(localSuggestionsRef.current);
+          setError(null);
+          setPhase("idle");
+          return;
+        }
         setSuggestions([]);
         if (err instanceof GenAppClientError) {
           setError(err);
@@ -159,15 +276,30 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
   const search = useCallback(
     (query: string) => {
       queryRef.current = query;
+      // 输入一变化就让在途响应失效，不能等下一次防抖请求真正发出。
+      suggestAbort.current?.abort();
+      suggestAbort.current = null;
+      suggestSeq.current += 1;
       const trimmed = query.trim();
       if (!trimmed) {
         debouncedSuggest.cancel();
-        suggestAbort.current?.abort();
         setSuggestions([]);
+        localSuggestionsRef.current = [];
         setPhase("idle");
         setError(null);
         return;
       }
+      if (trimmed.length > GEN_APP_LIMITS.queryMaxLength) {
+        debouncedSuggest.cancel();
+        setSuggestions([]);
+        localSuggestionsRef.current = [];
+        setPhase("idle");
+        setError(null);
+        return;
+      }
+      const immediate = localSuggestions(trimmed);
+      localSuggestionsRef.current = immediate;
+      setSuggestions(immediate);
       debouncedSuggest(trimmed);
     },
     [debouncedSuggest],
@@ -199,6 +331,19 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     [],
   );
 
+  const renderRunning = useCallback(
+    (windowId: string, patch: Partial<RunningGenApp>) => {
+      setRunning((prev) =>
+        prev.map((item) =>
+          item.windowId === windowId
+            ? { ...item, ...patch, renderSequence: item.renderSequence + 1 }
+            : item,
+        ),
+      );
+    },
+    [],
+  );
+
   /**
    * 点击候选：流式生成——窗口立即打开，内容边生成边渲染（节流刷新），
    * done 后换编译制品；流式端点不可用时回退非流式。
@@ -221,13 +366,24 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           iconEmoji: draft.summary.iconEmoji,
           iconTheme: draft.summary.iconTheme,
           html: draft.artifact.html,
+          format: draft.artifact.format,
+          markup: draft.artifact.markup ?? "",
+          runtimeSessionId: draft.runtimeSessionId,
+          revision: draft.artifact.revision,
+          interactionMode: draft.artifact.interactionMode ?? "hybrid",
+          renderSequence: 0,
           mode: "draft",
           status: "ready",
         };
         if (streamed) {
-          patchRunning(windowId, {
+          renderRunning(windowId, {
             appId: app.appId,
             html: app.html,
+            format: app.format,
+            markup: app.markup,
+            runtimeSessionId: app.runtimeSessionId,
+            revision: app.revision,
+            interactionMode: app.interactionMode,
             status: "ready",
             streamPhase: undefined,
           });
@@ -252,6 +408,12 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
             iconEmoji: suggestion.iconEmoji,
             iconTheme: suggestion.iconTheme,
             html: "",
+            format: GEN_APP_FORMAT,
+            markup: "",
+            runtimeSessionId: "",
+            revision: 0,
+            interactionMode: "hybrid",
+            renderSequence: 0,
             mode: "draft",
             status: "streaming",
             streamPhase: "generating",
@@ -264,7 +426,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           let flushTimer: number | null = null;
           const flush = () => {
             lastFlush = Date.now();
-            patchRunning(windowId, { html: buffer });
+            renderRunning(windowId, { markup: buffer });
           };
           const scheduleFlush = () => {
             const since = Date.now() - lastFlush;
@@ -366,10 +528,16 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           } else if (/timed out/i.test(message)) {
             message = "生成超时（上游响应过慢），请重试一次。";
           }
-          patchRunning(windowId, {
+          renderRunning(windowId, {
             status: "ready",
             mode: "installed", // 红灯走直接关闭分支，不触发安装
             html: buildErrorPage(suggestion.name, message),
+            format: GEN_APP_LEGACY_FORMAT,
+            markup: "",
+            runtimeSessionId: "",
+            revision: 0,
+            interactionMode: "hybrid",
+            renderSequence: 0,
             streamPhase: undefined,
           });
           if (err instanceof GenAppClientError) {
@@ -385,7 +553,14 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
         setPendingSuggestionId(null);
       }
     },
-    [host, patchRunning, pendingSuggestionId, startProgressPoll, stopProgressPoll],
+    [
+      host,
+      patchRunning,
+      pendingSuggestionId,
+      renderRunning,
+      startProgressPoll,
+      stopProgressPoll,
+    ],
   );
 
   /** 点击已安装应用：读库秒开（不调模型） */
@@ -405,6 +580,12 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           iconEmoji: bundle.summary.iconEmoji,
           iconTheme: bundle.summary.iconTheme,
           html: bundle.artifact.html,
+          format: bundle.artifact.format,
+          markup: bundle.artifact.markup ?? "",
+          runtimeSessionId: bundle.runtimeSessionId,
+          revision: bundle.artifact.revision,
+          interactionMode: bundle.artifact.interactionMode ?? "hybrid",
+          renderSequence: 0,
           mode: "installed",
         };
         setRunning((prev) => [...prev, app]);
@@ -494,6 +675,132 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     [],
   );
 
+  /** Runner 中继：V2 事件只带元素 id，服务端返回经编译的单目标 revision patch。 */
+  const interact = useCallback(
+    async (
+      windowId: string,
+      request: GenAppInteractRequest,
+      signal?: AbortSignal,
+    ): Promise<GenAppPatchDelivery> => {
+      const app = runningRef.current.find((item) => item.windowId === windowId);
+      if (
+        !app ||
+        !app.appId ||
+        !app.runtimeSessionId ||
+        app.runtimeSessionId !== request.runtimeSessionId
+      ) {
+        throw new Error("Runtime session is not ready.");
+      }
+      const sendInteraction = (baseRevision: number) =>
+        clientRef.current.interact(
+          app.appId,
+          {
+            ...request,
+            runtimeSessionId: app.runtimeSessionId,
+            baseRevision,
+          },
+          signal,
+        );
+      let recoveredMarkup: string | undefined;
+      let response: GenAppInteractResponse;
+      try {
+        response = await sendInteraction(request.baseRevision);
+      } catch (error) {
+        if (
+          !(error instanceof GenAppClientError) ||
+          error.status !== 409 ||
+          error.code !== "invalid_transition" ||
+          signal?.aborted
+        ) {
+          throw error;
+        }
+        const resumableApp = runningRef.current.find(
+          (item) =>
+            item.windowId === windowId &&
+            item.runtimeSessionId === app.runtimeSessionId &&
+            item.revision === request.baseRevision,
+        );
+        if (!resumableApp) {
+          throw new DOMException("Runtime window was replaced.", "AbortError");
+        }
+        const currentRevision = error.details?.currentRevision;
+        const currentMarkup = error.details?.currentMarkup;
+        if (
+          Number.isInteger(currentRevision) &&
+          (currentRevision as number) > resumableApp.revision &&
+          typeof currentMarkup === "string" &&
+          currentMarkup.trim()
+        ) {
+          setRunning((current) =>
+            current.map((item) =>
+              item.windowId === windowId &&
+              item.runtimeSessionId === app.runtimeSessionId &&
+              item.revision === request.baseRevision
+                ? {
+                    ...item,
+                    markup: currentMarkup,
+                    revision: currentRevision as number,
+                  }
+                : item,
+            ),
+          );
+          return {
+            kind: "render",
+            revision: currentRevision as number,
+            markup: currentMarkup,
+            error: "Runtime state was synchronized. Please retry the action.",
+          };
+        }
+        const resumed = await clientRef.current.resumeRuntime(
+          app.appId,
+          {
+            runtimeSessionId: app.runtimeSessionId,
+            revision: resumableApp.revision,
+            markup: resumableApp.markup,
+            interactionMode: resumableApp.interactionMode,
+          },
+          signal,
+        );
+        recoveredMarkup = resumed.markup;
+        response = await sendInteraction(resumed.revision);
+      }
+      const activeApp = runningRef.current.find(
+        (item) =>
+          item.windowId === windowId &&
+          item.runtimeSessionId === app.runtimeSessionId &&
+          item.revision === response.patch.baseRevision,
+      );
+      if (!activeApp) {
+        throw new DOMException("Runtime window was replaced.", "AbortError");
+      }
+      const markup = applyMarkupPatch(
+        recoveredMarkup ?? activeApp.markup,
+        response.patch,
+      );
+      setRunning((current) =>
+        current.map((item) => {
+          if (
+            item.windowId !== windowId ||
+            item.runtimeSessionId !== app.runtimeSessionId ||
+            item.revision !== response.patch.baseRevision
+          ) {
+            return item;
+          }
+          return {
+            ...item,
+            markup: applyMarkupPatch(
+              recoveredMarkup ?? item.markup,
+              response.patch,
+            ),
+            revision: response.patch.revision,
+          };
+        }),
+      );
+      return { kind: "patch", patch: response.patch, markup };
+    },
+    [],
+  );
+
   const view: GenAppWorkspaceView = useMemo(
     () => ({
       installed,
@@ -515,6 +822,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
     requestClose,
     remove,
     continueContent,
+    interact,
   };
 }
 

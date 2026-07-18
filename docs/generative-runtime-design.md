@@ -1,6 +1,36 @@
 # 生成式运行时（Generative Runtime）架构设计
 
-> 状态：owner 已批准。T1 + 频控（T2 核心）+ 会话记忆 + 局部更新（Vibe OS 对照后追加）已实施；剩余：设置页开关、遥测（T2/T3 尾项）。
+> 状态：owner 已批准。T1 与 Hybrid Generative Runtime V2 已实施；设置总开关和运行时遥测仍作为后续独立事项。
+
+## Hybrid Generative Runtime V2 实施结果
+
+旧 `/continue` 能力继续服务 `html-single-file` V1 制品；新生成应用默认使用
+`openos-markup` V2。V2 不再允许片段脚本，而是由预载 UI Kit 和 ActionRuntime
+承担通用行为，由 `/api/gen-apps/:id/interact` 承担语义交互。
+
+每个 draft/launch 返回独立 `runtimeSessionId`。服务端 `RuntimeSessionStore` 保存
+窗口级权威 markup、revision、interactionMode 与最近 6 轮模型上下文，并设置
+30 分钟 TTL 和 300 会话容量。补丁协议固定为一个最深层目标：
+
+```json
+{
+  "baseRevision": 1,
+  "revision": 2,
+  "ops": [
+    { "op": "replace", "targetId": "results", "html": "<section id=\"results\">...</section>" }
+  ]
+}
+```
+
+安全与性能不变量：
+
+- iframe 回传的 `data-target/currentHtml` 不作为权威事实；服务端按元素 id 从会话标记重解析，快照仅在重新编译成功后作为模型上下文。
+- V2 patch 必须匹配当前 revision、服务端选择的 target，并通过 parse5 声明式清洗；无效模型输出只修复一次。
+- 所有 `data-target`、`data-source`、`for` 与 ARIA ID 引用在整图合并后复验；制品最多 2,000 个元素节点。
+- 固定 Shell CSP 只放行 nonce 标记的可信脚本和样式；流式原文在 iframe 内再次清洗后才挂载。
+- 搜索先同步给出本地模板结果，再合并远端建议；服务端远端建议缓存 5 分钟。
+- 正常交互只传单目标 patch 且每窗口串行；目标被本地动作移除时 iframe 请求一次全量 resync。服务端 revision 领先时用 409 权威快照对齐并明确提示重试，不把未执行动作误报成功；只有 session 不存在时 `/resume` 才接受宿主快照并重建会话。
+- deterministic fake 最近一次验收：建议 18ms、首块 2ms、完整生成 241ms、补丁 5ms、V2 线载荷相对编译 Shell 减少 83%，revision 恢复通过；真实模型延迟由供应商决定，应继续按 P50/P95 观测。
 
 ## 8. 追加能力（对照 Microsoft Build 2026「Vibe OS」演示后实施）
 
@@ -107,7 +137,7 @@ host → iframe: { type: "openos:result", requestId, ok, fragment? , error? }
 ### 3.4 安全模型（边界不变）
 
 - iframe 仍然无网络（CSP 不动）；唯一出口是 postMessage → 宿主白名单 RPC → 本机 Bridge
-- fragment 与主制品同沙箱运行：即使含脚本，也出不了沙箱（这与主制品的信任级别一致）
+- V1 fragment 与旧制品同沙箱运行；V2 fragment 强制声明式、禁止脚本，并由可信 ActionRuntime 承担行为
 - 清洗只拦「会失效/超限」项（外链、体积），不做无意义的假净化
 - 配额防滥用：每应用每分钟 N 次（默认 6）、单次输出上限、设置页总开关
 

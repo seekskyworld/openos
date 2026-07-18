@@ -29,6 +29,8 @@ type Props = {
   emptyLabel?: string;
   /** 搜索占位（i18n 注入） */
   searchPlaceholder?: string;
+  /** 搜索输入硬上限；业务服务仍会独立校验。 */
+  searchMaxLength?: number;
   /** 「显示内容为」标签（i18n 注入） */
   viewAsLabel?: string;
   /** 「网格」标签 */
@@ -68,6 +70,7 @@ export function AppLauncher({
   allLabel = "All",
   emptyLabel = "No apps in this category",
   searchPlaceholder = "Applications",
+  searchMaxLength,
   viewAsLabel = "View as",
   gridLabel = "Grid",
   listLabel = "List",
@@ -186,6 +189,7 @@ export function AppLauncher({
             ref={searchRef}
             className="launcher-inline-search"
             value={query}
+            maxLength={searchMaxLength}
             onChange={(e) => {
               setQuery(e.target.value);
               onQueryChange?.(e.target.value);

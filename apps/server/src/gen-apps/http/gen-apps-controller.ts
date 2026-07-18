@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  GEN_APP_FORMAT,
   parseGenAppSuggestion,
+  parseGenAppInteractRequest,
+  parseGenAppRuntimeResumeRequest,
+  type GenAppArtifact,
+  type GenAppDraft,
+  type GenAppLaunchBundle,
   type GenAppApiError,
   type GenAppErrorCode,
   GEN_APP_ERROR_CODES,
@@ -44,6 +50,7 @@ function toErrorBody(error: unknown, requestId: string): {
     code?: string;
     status?: number;
     retryable?: boolean;
+    details?: Record<string, unknown>;
   };
   const code: GenAppErrorCode = isKnownCode(err.code) ? err.code : "internal_error";
   const status =
@@ -58,9 +65,23 @@ function toErrorBody(error: unknown, requestId: string): {
         message: err.message || "Internal error",
         requestId,
         retryable: Boolean(err.retryable),
+        details: err.details,
       },
     },
   };
+}
+
+/** V2 shell 随 Web bundle 预载，线协议只传 markup，避免每次重复发送 UI Kit/CSP。 */
+function compactArtifactForWire(artifact: GenAppArtifact): GenAppArtifact {
+  return artifact.format === GEN_APP_FORMAT ? { ...artifact, html: "" } : artifact;
+}
+
+function compactDraftForWire(draft: GenAppDraft): GenAppDraft {
+  return { ...draft, artifact: compactArtifactForWire(draft.artifact) };
+}
+
+function compactBundleForWire(bundle: GenAppLaunchBundle): GenAppLaunchBundle {
+  return { ...bundle, artifact: compactArtifactForWire(bundle.artifact) };
 }
 
 export class GenAppsController {
@@ -145,7 +166,7 @@ export class GenAppsController {
               onPhase: (phase) => emit("phase", phase),
             },
           );
-          emit("done", { draft, requestId });
+          emit("done", { draft: compactDraftForWire(draft), requestId });
         } catch (error) {
           const { body } = toErrorBody(error, requestId);
           emit("error", body);
@@ -184,7 +205,7 @@ export class GenAppsController {
             },
             context,
           );
-          sendJson(res, 200, { draft, requestId });
+          sendJson(res, 200, { draft: compactDraftForWire(draft), requestId });
         } finally {
           this.deps.progress?.bind(null);
         }
@@ -208,7 +229,7 @@ export class GenAppsController {
       }
 
       const idMatch = pathname.match(
-        /^\/api\/gen-apps\/([^/]+)(\/install|\/launch|\/continue)?$/,
+        /^\/api\/gen-apps\/([^/]+)(\/install|\/launch|\/continue|\/interact|\/resume)?$/,
       );
       if (idMatch) {
         const appId = decodeURIComponent(idMatch[1]);
@@ -234,6 +255,45 @@ export class GenAppsController {
           return true;
         }
 
+        if (method === "POST" && action === "/interact") {
+          const payload = await this.parseJson(req, requestId, res);
+          if (payload === undefined) return true;
+          const parsed = parseGenAppInteractRequest(payload);
+          if (!parsed) {
+            sendJson(res, 400, {
+              error: {
+                code: "validation_failed",
+                message: "runtimeSessionId, baseRevision and a valid event are required.",
+                requestId,
+                retryable: false,
+              },
+            } satisfies GenAppApiError);
+            return true;
+          }
+          const result = await service.interact({ appId, ...parsed }, context);
+          sendJson(res, 200, result);
+          return true;
+        }
+
+        if (method === "POST" && action === "/resume") {
+          const payload = await this.parseJson(req, requestId, res);
+          if (payload === undefined) return true;
+          const parsed = parseGenAppRuntimeResumeRequest(payload);
+          if (!parsed) {
+            sendJson(res, 400, {
+              error: {
+                code: "validation_failed",
+                message: "A valid runtime session snapshot is required.",
+                requestId,
+                retryable: false,
+              },
+            } satisfies GenAppApiError);
+            return true;
+          }
+          sendJson(res, 200, service.resumeRuntime({ appId, ...parsed }, requestId));
+          return true;
+        }
+
         if (method === "POST" && action === "/install") {
           const summary = service.install(appId);
           sendJson(res, 200, { summary, requestId });
@@ -241,7 +301,7 @@ export class GenAppsController {
         }
         if (method === "POST" && action === "/launch") {
           const bundle = service.launch(appId);
-          sendJson(res, 200, { bundle, requestId });
+          sendJson(res, 200, { bundle: compactBundleForWire(bundle), requestId });
           return true;
         }
         if (method === "DELETE" && !action) {

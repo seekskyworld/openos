@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
  * 幂等迁移：user_version 顺序执行。
  * v1：chat 表（与既有 chat-store 建表语句等价，IF NOT EXISTS 兼容已存在库）
  * v2：gen_apps / gen_app_artifacts / gen_app_data
+ * v3：Artifact V2 的结构化 payload（保留 html 作为 V1/兼容回退）
  */
 
 type Migration = {
@@ -77,6 +78,12 @@ const MIGRATIONS: Migration[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_gen_apps_state ON gen_apps(state, opened_at);
       `);
+    },
+  },
+  {
+    version: 3,
+    up(db) {
+      db.exec("ALTER TABLE gen_app_artifacts ADD COLUMN payload_json TEXT;");
     },
   },
 ];

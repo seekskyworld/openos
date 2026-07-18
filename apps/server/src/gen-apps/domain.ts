@@ -1,7 +1,10 @@
 import type {
   GenAppArtifact,
+  GenAppArtifactFormat,
+  GenAppDeclaredAction,
   GenAppDraft,
   GenAppIconTheme,
+  GenAppInteractionMode,
   GenAppLaunchBundle,
   GenAppSuggestion,
   GenAppSummary,
@@ -17,6 +20,7 @@ export type GenAppErrorShape = Error & {
   code: string;
   retryable: boolean;
   status: number;
+  details?: Record<string, unknown>;
 };
 
 export function genAppError(
@@ -24,11 +28,13 @@ export function genAppError(
   message: string,
   status: number,
   retryable = false,
+  details?: Record<string, unknown>,
 ): GenAppErrorShape {
   const err = new Error(message) as GenAppErrorShape;
   err.code = code;
   err.retryable = retryable;
   err.status = status;
+  err.details = details;
   return err;
 }
 
@@ -45,6 +51,8 @@ export type UntrustedArtifact = {
   html: string;
   provider: string;
   model: string;
+  /** V2 交互策略由可信设置映射，不从模型文本读取。 */
+  interactionMode?: GenAppInteractionMode;
 };
 
 declare const validatedBrand: unique symbol;
@@ -52,7 +60,12 @@ declare const validatedBrand: unique symbol;
 /** 编译器输出：带 brand 的已验证制品，Repository 唯一入口 */
 export type ValidatedArtifact = {
   readonly [validatedBrand]: true;
+  format: GenAppArtifactFormat;
   html: string;
+  markup?: string;
+  actions?: GenAppDeclaredAction[];
+  kitVersion?: number;
+  interactionMode?: GenAppInteractionMode;
   contentSha256: string;
   sizeBytes: number;
   formatVersion: number;

@@ -1,4 +1,5 @@
 import type { ServerEnv } from "../../env.js";
+import { GEN_APP_LIMITS } from "@openos/shared";
 import { coreGenerate, type WireTarget } from "../../llm-core/index.js";
 import { resolveEffectiveLlm } from "../../settings-store.js";
 import {
@@ -42,6 +43,11 @@ function extractJsonArray(text: string): unknown[] | null {
 }
 
 export class LlmGenAppGenerator implements GenAppGenerator {
+  private readonly suggestionCache = new Map<
+    string,
+    { expiresAt: number; value: UntrustedSuggestion[] }
+  >();
+
   constructor(private readonly env: ServerEnv) {}
 
   private ensureConfigured() {
@@ -72,10 +78,21 @@ export class LlmGenAppGenerator implements GenAppGenerator {
   ): Promise<UntrustedSuggestion[]> {
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
+    const tier = creativityTier(settings.creativity);
+    const cacheKey = JSON.stringify([
+      input.query.trim().toLocaleLowerCase(),
+      input.count,
+      tier,
+      settings.appLanguage,
+      llm.provider,
+      llm.model,
+    ]);
+    const cached = this.suggestionCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value.map((item) => ({ ...item }));
     const prompt = buildSuggestPrompt({
       query: input.query,
       count: input.count,
-      tier: creativityTier(settings.creativity),
+      tier,
       language: settings.appLanguage,
     });
 
@@ -85,6 +102,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
         timeoutMs: 90_000,
+        maxAttempts: 2,
         signal,
       },
       {
@@ -94,7 +112,8 @@ export class LlmGenAppGenerator implements GenAppGenerator {
           { role: "user", content: prompt.user },
         ],
         temperature: creativityTemperature(settings.creativity).suggest,
-        reasoningEffort: llm.reasoningEffort,
+        reasoningEffort: "off",
+        maxOutputTokens: 1_200,
       },
     );
 
@@ -107,7 +126,15 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         true,
       );
     }
-    return parsed as UntrustedSuggestion[];
+    const value = parsed as UntrustedSuggestion[];
+    if (this.suggestionCache.size >= GEN_APP_LIMITS.suggestionCacheMaxEntries) {
+      this.suggestionCache.delete(this.suggestionCache.keys().next().value ?? "");
+    }
+    this.suggestionCache.set(cacheKey, {
+      expiresAt: Date.now() + GEN_APP_LIMITS.suggestionCacheTtlMs,
+      value: value.map((item) => ({ ...item })),
+    });
+    return value;
   }
 
   async generate(
@@ -116,11 +143,12 @@ export class LlmGenAppGenerator implements GenAppGenerator {
   ): Promise<UntrustedArtifact> {
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
+    const tier = creativityTier(settings.creativity);
     const prompt = buildGeneratePrompt({
       name: input.name,
       description: input.description,
       query: input.query,
-      tier: creativityTier(settings.creativity),
+      tier,
       language: settings.appLanguage,
     });
 
@@ -140,8 +168,8 @@ export class LlmGenAppGenerator implements GenAppGenerator {
           { role: "user", content: prompt.user },
         ],
         temperature: creativityTemperature(settings.creativity).generate,
-        reasoningEffort: llm.reasoningEffort,
-        maxOutputTokens: 16_000,
+        reasoningEffort: "off",
+        maxOutputTokens: 4_000,
       },
     );
 
@@ -149,6 +177,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       html: result.text,
       provider: llm.provider,
       model: result.model,
+      interactionMode: tier === "fantasy" ? "improv" : "hybrid",
     };
   }
 
@@ -173,9 +202,9 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         messages: input.messages,
         // 内容类（browse/content）温度略高更有真实感；界面/局部更新类收敛
         temperature: input.intent === "panel" || input.intent === "update" ? 0.3 : 0.7,
-        reasoningEffort: llm.reasoningEffort,
+        reasoningEffort: "off",
         maxOutputTokens:
-          input.intent === "browse" ? 8_000 : input.intent === "update" ? 2_000 : 4_000,
+          input.intent === "browse" ? 4_000 : input.intent === "update" ? 1_500 : 2_500,
       },
     );
     return result.text;

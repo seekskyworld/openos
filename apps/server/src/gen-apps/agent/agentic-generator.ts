@@ -21,7 +21,7 @@ import {
   type AgentProgressEvent,
   type AgentRunResult,
 } from "../../agent-core/index.js";
-import { createHtmlAppTask } from "./html-app-task.js";
+import { createMarkupAppTask } from "./markup-app-task.js";
 
 /**
  * AgenticGenAppGenerator：GenAppGenerator adapter。
@@ -130,11 +130,12 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
     }
 
     const settings = loadGenAppsSettings(this.env);
+    const tier = creativityTier(settings.creativity);
     const prompt = buildGeneratePrompt({
       name: input.name,
       description: input.description,
       query: input.query,
-      tier: creativityTier(settings.creativity),
+      tier,
       language: settings.appLanguage,
     });
     const firstTemp = creativityTemperature(settings.creativity).generate;
@@ -160,16 +161,16 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
       }
     };
 
-    // 任务包：HTML 应用的全部上下文（提示词/提取/校验/降级）都在这里；
+    // 任务包：V2 标记的全部上下文（提示词/提取/校验/降级）都在这里；
     // 内核 runAgent 与任务解耦——其他 LLM 应用换任务包即可复用同一 agent
-    const task = createHtmlAppTask({
+    const task = createMarkupAppTask({
       system: prompt.system,
       user: prompt.user,
       firstTemperature: firstTemp,
-      canCompile: (html) => {
+      canCompile: (markup) => {
         try {
           compileArtifact({
-            html,
+            html: markup,
             provider: llm.provider,
             model: llm.model,
           });
@@ -200,8 +201,8 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
               model: llm.model,
               messages,
               temperature,
-              reasoningEffort: llm.reasoningEffort,
-              maxOutputTokens: 16_000,
+              reasoningEffort: "off",
+              maxOutputTokens: 4_000,
             },
           );
           return out.text;
@@ -245,6 +246,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
       html: result.artifact,
       provider: llm.provider,
       model: llm.model,
+      interactionMode: tier === "fantasy" ? "improv" : "hybrid",
     };
   }
 }
