@@ -24,6 +24,8 @@ import type {
  */
 
 export class LlmGenAppGenerator implements GenAppGenerator {
+  private readonly suggestionCache = new Map<string, { expiresAt: number; values: UntrustedSuggestion[] }>();
+
   constructor(private readonly env: ServerEnv) {}
 
   private ensureConfigured() {
@@ -54,12 +56,52 @@ export class LlmGenAppGenerator implements GenAppGenerator {
   ): Promise<UntrustedSuggestion[]> {
     signal.throwIfAborted();
     const settings = loadGenAppsSettings(this.env);
-    return createFastGenAppSuggestionSeeds({
+    const fallback = createFastGenAppSuggestionSeeds({
       query: input.query,
       count: input.count,
       language: settings.appLanguage,
       style: creativityTier(settings.creativity),
     });
+    const key = `${input.query.trim().toLocaleLowerCase()}|${input.count}|${settings.appLanguage}|${creativityTier(settings.creativity)}`;
+    const cached = this.suggestionCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.values.map((value) => ({ ...value }));
+    const llm = resolveEffectiveLlm(this.env);
+    const configured = (Boolean(llm.apiKey) && llm.apiKey !== "no-key") || llm.authStyle === "none";
+    if (!configured || process.env.OPENOS_GENAPPS_MODEL_SUGGESTIONS === "0") return fallback;
+    try {
+      const languageHint = settings.appLanguage === "en" ? "English" : settings.appLanguage === "zh" ? "简体中文" : "query language";
+      const result = await coreGenerate(
+        {
+          protocol: llm.protocol,
+          target: this.wireTarget(llm),
+          timeoutMs: 8_000,
+          signal,
+        },
+        {
+          model: llm.model,
+          messages: [
+            {
+              role: "system",
+              content: `Return exactly a JSON array of ${input.count} diverse interactive app candidates. Each item must have name, description, iconEmoji, iconTheme, intentKey, routeHint. Use ${languageHint}. routeHint is recipe, composition, or generate. No markdown or explanation.`,
+            },
+            { role: "user", content: JSON.stringify({ query: input.query, count: input.count }) },
+          ],
+          temperature: 0.85,
+          reasoningEffort: "off",
+          maxOutputTokens: 900,
+        },
+      );
+      const fenced = result.text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? result.text;
+      const parsed: unknown = JSON.parse(fenced.trim());
+      const rows = Array.isArray(parsed) ? parsed : (parsed && typeof parsed === "object" && Array.isArray((parsed as { suggestions?: unknown }).suggestions) ? (parsed as { suggestions: unknown[] }).suggestions : []);
+      const values = rows.filter((row): row is UntrustedSuggestion => typeof row === "object" && row !== null).slice(0, input.count) as UntrustedSuggestion[];
+      if (values.length === 0) return fallback;
+      this.suggestionCache.set(key, { expiresAt: Date.now() + 120_000, values });
+      if (this.suggestionCache.size > 100) this.suggestionCache.delete(this.suggestionCache.keys().next().value!);
+      return values.map((value) => ({ ...value }));
+    } catch {
+      return fallback;
+    }
   }
 
   async generate(
