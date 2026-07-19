@@ -1,9 +1,23 @@
 # Gen Apps（AI 生成应用）架构设计
 
-> 状态：V1 竖切、Hybrid Runtime V2 与 cache-first Instant 生成已实施，V1 制品保持兼容
+> 状态：V1 兼容、Hybrid Runtime V2、cache-first 与原子渐进 HTML 已实施
 > 归属：App 启动台搜索 -> 大模型生成应用 -> 隔离运行 -> 关闭后安装 -> 持久化复用  
 > 目标端：Electron 桌面端与浏览器端；两端共享业务模块，但运行时隔离强度允许不同  
-> 最近实施：2026-07-18
+> 最近实施：2026-07-20
+
+## 原子渐进 HTML 冷生成（已实施）
+
+普通长尾应用默认不再要求模型构造 AppIR JSON。模型直接书写宿主可消费的声明式 HTML，使用四个轻量注释边界依次提交 `shell -> core -> content -> actions`。服务端只在收到 `<!--openos:end-->` 后解析一个完整块；shell 执行全量清洗，后续块按稳定 id 替换，并在每次合并后重新校验完整引用图。未闭合 token、非法块、乱序块不会进入 iframe。
+
+```text
+model token stream
+   -> ProgressiveHtmlAssembler（闭合块边界）
+   -> parse5 sanitize / target replace / full graph validation
+   -> SSE snapshot（完整 markup）
+   -> 已预载 UI Kit + ActionRuntime 的固定 iframe
+```
+
+这条路径保留 cache-first、Recipe/EngineRegistry 和 Runtime Patch：缓存命中直接返回成品 HTML；扫雷、数独、贪吃蛇、平台游戏继续走可信本地引擎；tab、列表、表单等通用动作仍在宿主本地执行。AppIR schema/编译器只作为已安装制品和实验开关 `OPENOS_GENAPPS_OUTPUT=appir` 的兼容能力，不再是默认冷生成协议。
 
 ## Cache-first 生成链（已实施）
 
@@ -31,7 +45,7 @@ fingerprint（prompt / policy / UI Kit / runtime 版本）
 - blueprint 只存语义模板和受信任 markup，不绕过编译器；编译失败时 Instant 使用本地 generic fallback。
 - 成品缓存与 draft/installed 生命周期分离；命中缓存仍创建新的草稿、运行会话和 revision，避免窗口状态串线。
 - 缓存 fingerprint 包含供应商/协议/端点/模型、策略版本、blueprint/UI Kit/runtime 版本和 creativity tier，切换模型或升级任一版本会自然失效；SQLite 按 TTL、大小和 LRU 淘汰，且不记录 API Key。
-- 同一 fingerprint 的并发请求共享底层模型调用，订阅者各自接收流式 delta；最后一个订阅者取消才中止底层任务。
+- 同一 fingerprint 的并发请求共享底层模型调用，订阅者各自接收原子 HTML snapshot；最后一个订阅者取消才中止底层任务。
 
 默认 `generationMode` 为 `fast`（兼容内部称呼 Instant）；`agentic` 仅在用户显式选择精修模式时启用且限制为 2-3 轮。游戏优先走 recipe/engine，常见工具走本地 blueprint，未知需求走单轮 Instant，只有可由声明式标记修复的场景才支付有限多轮延迟。
 

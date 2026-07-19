@@ -14,7 +14,7 @@ export type GenAppArtifactFormat = (typeof GEN_APP_FORMATS)[number];
 export const GEN_APP_FORMAT_VERSION = 2;
 export const GEN_APP_RUNTIME_VERSION = 6;
 export const GEN_APP_POLICY_VERSION = 2;
-export const GEN_APP_PROMPT_VERSION = 2;
+export const GEN_APP_PROMPT_VERSION = 3;
 export const GEN_APP_UI_KIT_VERSION = 2;
 
 export const GEN_APP_PLATFORMER_LIMITS = {

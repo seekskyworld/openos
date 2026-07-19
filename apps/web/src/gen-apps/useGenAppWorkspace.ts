@@ -401,7 +401,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
                 onSnapshot: (snapshot) => {
                   buffer = snapshot.markup;
                   flush();
-                  const label = `appir-${snapshot.stage}`;
+                  const label = `html-${snapshot.stage}`;
                   setAgentPhase(label);
                   patchRunning(windowId, { streamPhase: label });
                 },

@@ -79,14 +79,10 @@ export class DeterministicFakeGenerator implements GenAppGenerator {
     _signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
     const markup = buildDeterministicMarkup(input);
-    if (input.onDelta) {
-      input.onPhase?.({ phase: "generating" });
-      const chunkSize = 320;
-      for (let index = 0; index < markup.length; index += chunkSize) {
-        input.onDelta(markup.slice(index, index + chunkSize));
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-    }
+    input.onPhase?.({ phase: "generating-html" });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    input.onSnapshot?.({ stage: "shell", markup });
+    input.onPhase?.({ phase: "html-shell" });
     return {
       html: markup,
       provider: "fake",

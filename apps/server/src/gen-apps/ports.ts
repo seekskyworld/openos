@@ -24,7 +24,7 @@ export type GeneratePortInput = {
   description: string;
   /** 流式渲染：模型增量文本回调（agentic 修复轮会重新从头流出） */
   onDelta?: (text: string) => void;
-  /** AppIR 冷生成的阶段性、完整可校验 markup 快照。 */
+  /** 冷生成阶段性、完整可校验的 markup 快照；当前主路径为原子渐进 HTML。 */
   onSnapshot?: (snapshot: { stage: string; markup: string }) => void;
   /** 流式渲染：阶段变化回调（generating/checking/fixing/done） */
   onPhase?: (phase: { phase: string; round?: number }) => void;

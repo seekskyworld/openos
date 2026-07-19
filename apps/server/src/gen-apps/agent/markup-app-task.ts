@@ -2,6 +2,7 @@ import type { AgentIssue, AgentTask } from "../../agent-core/index.js";
 import type { CoreMessage } from "../../llm-core/index.js";
 import { unwrapHtmlFence } from "../artifact-extract.js";
 import { validateGenAppMarkup } from "../markup-artifact.js";
+import { extractProgressiveHtml } from "../generation/progressive-html-stream.js";
 
 type MarkupAppTaskInput = {
   system: string;
@@ -54,6 +55,8 @@ export function createMarkupAppTask(
     },
 
     extract(raw: string): string | null {
+      const progressive = extractProgressiveHtml(raw);
+      if (progressive) return progressive;
       const markup = unwrapHtmlFence(raw).trim();
       return markup.length >= 20 ? markup : null;
     },

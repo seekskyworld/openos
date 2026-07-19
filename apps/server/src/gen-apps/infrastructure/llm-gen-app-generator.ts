@@ -7,10 +7,10 @@ import {
   creativityTier,
   loadGenAppsSettings,
 } from "../gen-app-settings.js";
-import { buildGeneratePrompt } from "../prompt-policy.js";
-import { buildAppIrPrompt } from "../prompt-policy.js";
+import { buildAppIrPrompt, buildProgressiveHtmlPrompt } from "../prompt-policy.js";
 import { compileAppIr } from "../app-ir-compiler.js";
 import { AppIrStageAssembler } from "../generation/app-ir-stream.js";
+import { ProgressiveHtmlAssembler } from "../generation/progressive-html-stream.js";
 import { GEN_APP_LLM_BUDGETS } from "../llm-budgets.js";
 import { genAppError, type UntrustedArtifact, type UntrustedSuggestion } from "../domain.js";
 import type {
@@ -112,11 +112,11 @@ export class LlmGenAppGenerator implements GenAppGenerator {
     input: GeneratePortInput,
     signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
-    if (process.env.OPENOS_GENAPPS_OUTPUT !== "html") return this.generateAppIr(input, signal);
+    if (process.env.OPENOS_GENAPPS_OUTPUT === "appir") return this.generateAppIr(input, signal);
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
     const tier = creativityTier(settings.creativity);
-    const prompt = buildGeneratePrompt({
+    const prompt = buildProgressiveHtmlPrompt({
       name: input.name,
       description: input.description,
       query: input.query,
@@ -124,7 +124,14 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       language: settings.appLanguage,
     });
 
-    input.onPhase?.({ phase: "generating" });
+    input.onPhase?.({ phase: "generating-html" });
+    const assembler = new ProgressiveHtmlAssembler();
+    const emitSnapshots = (snapshots: ReturnType<ProgressiveHtmlAssembler["push"]>) => {
+      for (const snapshot of snapshots) {
+        input.onPhase?.({ phase: `html-${snapshot.stage}` });
+        input.onSnapshot?.(snapshot);
+      }
+    };
     const result = await coreGenerate(
       {
         protocol: llm.protocol,
@@ -133,7 +140,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         headerTimeoutMs: GEN_APP_LLM_BUDGETS.generationHeaderMs,
         idleTimeoutMs: GEN_APP_LLM_BUDGETS.generationIdleMs,
         signal,
-        onDelta: input.onDelta,
+        onDelta: (chunk) => emitSnapshots(assembler.push(chunk)),
       },
       {
         model: llm.model,
@@ -146,6 +153,27 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         maxOutputTokens: 2_500,
       },
     );
+    emitSnapshots(assembler.finish());
+
+    const progressiveMarkup = assembler.latestMarkup();
+    const progressiveStage = assembler.latestStage();
+    if (progressiveMarkup && progressiveStage && progressiveStage !== "shell") {
+      return {
+        html: progressiveMarkup,
+        provider: llm.provider,
+        model: result.model,
+        interactionMode: tier === "fantasy" ? "improv" : "hybrid",
+      };
+    }
+    if (result.text.includes("<!--openos:stage:")) {
+      const reason = assembler.latestFailure();
+      throw genAppError(
+        "invalid_model_output",
+        reason ? `Model returned invalid progressive HTML: ${reason}` : "Model returned no valid progressive HTML stage.",
+        422,
+        true,
+      );
+    }
 
     return {
       html: result.text,

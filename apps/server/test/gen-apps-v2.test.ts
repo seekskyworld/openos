@@ -52,7 +52,12 @@ import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight
 import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
 import { resolveAppRecipe } from "../src/gen-apps/generation/app-recipe.js";
 import { AppIrStageAssembler } from "../src/gen-apps/generation/app-ir-stream.js";
+import {
+  ProgressiveHtmlAssembler,
+  PROGRESSIVE_HTML_STAGES,
+} from "../src/gen-apps/generation/progressive-html-stream.js";
 import { GEN_APP_LLM_BUDGETS } from "../src/gen-apps/llm-budgets.js";
+import { buildProgressiveHtmlPrompt } from "../src/gen-apps/prompt-policy.js";
 import {
   clampAgentMaxRounds,
   loadGenAppsSettings,
@@ -146,6 +151,55 @@ test("AppIR stage assembler emits only complete ordered atomic snapshots", () =>
   const behaviorFirst = JSON.stringify({ stage: "behavior", ir: validAppIr() });
   const surfaceAfter = JSON.stringify({ stage: "surface", ir: validAppIr() });
   assert.equal(duplicate.push(`${behaviorFirst}\n${surfaceAfter}\n`).length, 1);
+});
+
+test("progressive HTML assembler emits only closed validated subtree snapshots", () => {
+  const stream = [
+    '<!--openos:stage:shell--><main id="app" class="os-app"><section id="app-core"></section><section id="app-content"></section><footer id="app-actions"></footer></main><!--openos:end-->',
+    '<!--openos:stage:core:app-core--><section id="app-core"><input id="query" type="search"><button id="search" type="button" data-action="web.search" data-source="query" data-target="app-content">搜索</button></section><!--openos:end-->',
+    '<!--openos:stage:content:app-content--><section id="app-content"><p id="result">初始内容</p></section><!--openos:end-->',
+    '<!--openos:stage:actions:app-actions--><footer id="app-actions"><button id="clear" type="button" data-action="toast" data-value="完成">完成</button></footer><!--openos:end-->',
+  ].join("");
+  const assembler = new ProgressiveHtmlAssembler();
+  const snapshots = [
+    ...assembler.push(stream.slice(0, 73)),
+    ...assembler.push(stream.slice(73, 287)),
+    ...assembler.push(stream.slice(287)),
+    ...assembler.finish(),
+  ];
+  assert.deepEqual(snapshots.map((snapshot) => snapshot.stage), PROGRESSIVE_HTML_STAGES);
+  assert.ok(snapshots.every((snapshot) => snapshot.markup.startsWith('<main id="app" class="os-app">')));
+  assert.match(assembler.latestMarkup() ?? "", /id="result"/);
+  assert.match(assembler.latestMarkup() ?? "", /id="clear"/);
+
+  const incomplete = new ProgressiveHtmlAssembler();
+  assert.deepEqual(incomplete.push('<!--openos:stage:shell--><main class="os-app">'), []);
+  assert.equal(incomplete.latestMarkup(), null);
+
+  const invalid = new ProgressiveHtmlAssembler();
+  const invalidStream = '<!--openos:stage:shell--><main class="os-app"><section id="app-core"></section></main><!--openos:end--><!--openos:stage:core:missing--><section id="missing">bad target</section><!--openos:end-->';
+  assert.equal(invalid.push(invalidStream).length, 1);
+  assert.doesNotMatch(invalid.latestMarkup() ?? "", /bad target/);
+  assert.match(invalid.latestFailure() ?? "", /Target missing was not found/);
+
+  const outOfOrder = new ProgressiveHtmlAssembler();
+  const outOfOrderStream = '<!--openos:stage:shell--><main class="os-app"><section id="app-content"></section></main><!--openos:end--><!--openos:stage:content:app-content--><section id="app-content">too early</section><!--openos:end-->';
+  assert.equal(outOfOrder.push(outOfOrderStream).length, 1);
+  assert.doesNotMatch(outOfOrder.latestMarkup() ?? "", /too early/);
+});
+
+test("cold generation prompt requests native HTML stages instead of AppIR", () => {
+  const prompt = buildProgressiveHtmlPrompt({
+    name: "Notes",
+    description: "Write notes",
+    query: "notes",
+    tier: "indie",
+    language: "en",
+  });
+  assert.match(prompt.system, /<!--openos:stage:shell-->/);
+  assert.match(prompt.system, /<!--openos:stage:actions:app-actions-->/);
+  assert.match(prompt.system, /不要 JSON/);
+  assert.doesNotMatch(prompt.system, /AppIR/);
 });
 
 test("cold app generation allows slow response headers without disabling idle protection", () => {

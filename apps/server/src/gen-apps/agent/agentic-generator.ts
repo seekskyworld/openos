@@ -9,7 +9,8 @@ import {
   loadGenAppsSettings,
 } from "../gen-app-settings.js";
 import { genAppError, type UntrustedArtifact } from "../domain.js";
-import { buildGeneratePrompt } from "../prompt-policy.js";
+import { buildProgressiveHtmlPrompt } from "../prompt-policy.js";
+import { ProgressiveHtmlAssembler } from "../generation/progressive-html-stream.js";
 import type {
   ContinuePortInput,
   GenAppGenerator,
@@ -132,7 +133,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
 
     const settings = loadGenAppsSettings(this.env);
     const tier = creativityTier(settings.creativity);
-    const prompt = buildGeneratePrompt({
+    const prompt = buildProgressiveHtmlPrompt({
       name: input.name,
       description: input.description,
       query: input.query,
@@ -187,6 +188,13 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
       result = await runAgent(
         task,
         async (messages, temperature, roundSignal) => {
+          const assembler = new ProgressiveHtmlAssembler();
+          const emitSnapshots = (snapshots: ReturnType<ProgressiveHtmlAssembler["push"]>) => {
+            for (const snapshot of snapshots) {
+              input.onPhase?.({ phase: `html-${snapshot.stage}` });
+              input.onSnapshot?.(snapshot);
+            }
+          };
           // 流式生成：断流/重试由 llm-core 处理；roundSignal 直通取消
           // 慢速上游单轮可达 6-8 分钟；卡死由 llm-core idle 超时(60s)负责，
           // 这里的总预算只防失控，不应掐断仍在活跃流动的流
@@ -198,7 +206,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
               headerTimeoutMs: GEN_APP_LLM_BUDGETS.generationHeaderMs,
               idleTimeoutMs: GEN_APP_LLM_BUDGETS.generationIdleMs,
               signal: roundSignal,
-              onDelta: input.onDelta,
+              onDelta: (chunk) => emitSnapshots(assembler.push(chunk)),
             },
             {
               model: llm.model,
@@ -208,6 +216,7 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
               maxOutputTokens: 4_000,
             },
           );
+          emitSnapshots(assembler.finish());
           return out.text;
         },
         {

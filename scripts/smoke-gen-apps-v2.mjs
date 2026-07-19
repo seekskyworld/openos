@@ -43,8 +43,9 @@ async function streamDraft(base, payload) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let firstDeltaMs = null;
+  let firstRegionMs = null;
   let draft = null;
+  const snapshotStages = [];
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -54,8 +55,11 @@ async function streamDraft(base, payload) {
       const raw = buffer.slice(0, separator);
       buffer = buffer.slice(separator).replace(/^\r?\n\r?\n/, "");
       const event = parseEvent(raw);
-      if (event.name === "delta" && firstDeltaMs === null) {
-        firstDeltaMs = performance.now() - started;
+      if ((event.name === "delta" || event.name === "snapshot") && firstRegionMs === null) {
+        firstRegionMs = performance.now() - started;
+      }
+      if (event.name === "snapshot" && typeof event.data?.stage === "string") {
+        snapshotStages.push(event.data.stage);
       }
       if (event.name === "done") draft = event.data.draft;
       if (event.name === "error") {
@@ -66,8 +70,9 @@ async function streamDraft(base, payload) {
   assert(draft, "draft stream ended without a draft");
   return {
     draft,
-    firstDeltaMs: firstDeltaMs ?? performance.now() - started,
+    firstDeltaMs: firstRegionMs ?? performance.now() - started,
     totalMs: performance.now() - started,
+    snapshotStages,
   };
 }
 
@@ -151,6 +156,21 @@ try {
   assert(draft.artifact.html === "", "V2 wire payload repeated the runtime shell");
   assert(draft.artifact.markup.includes('data-action="web.search"'), "V2 markup missing web search action");
   assert(draft.runtimeSessionId, "draft runtime session missing");
+
+  const progressive = await streamDraft(base, {
+    suggestion: {
+      id: "smoke-progressive",
+      name: "Quantum Garden",
+      description: "A novel generated workspace",
+      iconEmoji: "✨",
+      iconTheme: "purple",
+    },
+    query: "quantum garden",
+    idempotencyKey: "smoke-progressive-draft",
+    bypassCache: true,
+  });
+  assert(progressive.snapshotStages.includes("shell"), "model path did not emit an atomic HTML snapshot");
+  assert(progressive.firstDeltaMs < 500, `progressive HTML first snapshot regressed to ${progressive.firstDeltaMs}ms`);
 
   const patchStarted = performance.now();
   const patchResponse = await fetch(
@@ -271,6 +291,7 @@ try {
         metrics: {
           suggestionMs: Math.round(suggestionMs),
           firstDeltaMs: Math.round(generated.firstDeltaMs),
+          progressiveSnapshotMs: Math.round(progressive.firstDeltaMs),
           generationMs: Math.round(generated.totalMs),
           recipeP95Ms: Math.round(recipeP95Ms * 100) / 100,
           patchMs: Math.round(patchMs),

@@ -67,6 +67,26 @@ export function buildGeneratePrompt(input: {
   return { system, user };
 }
 
+/** 冷生成主协议：HTML 本体保持原生，只用注释边界提交闭合子树。 */
+export function buildProgressiveHtmlPrompt(input: {
+  name: string;
+  description: string;
+  query: string;
+  tier: CreativityTier;
+  language: GenAppLanguage;
+}): { system: string; user: string } {
+  const base = buildGeneratePrompt(input);
+  const protocol = [
+    "必须按下面 4 个块依次输出，不要输出块以外的内容；HTML 内不要再次使用 openos:stage/openos:end 注释。",
+    "<!--openos:stage:shell--> 后输出一个完整、可独立渲染的精简 <main class=\"os-app\">，必须包含三个空占位根：id=\"app-core\"、id=\"app-content\"、id=\"app-actions\"，随后输出 <!--openos:end-->。shell 应在约 700 token 内结束，让窗口尽快可见。",
+    "<!--openos:stage:core:app-core--> 后输出以 id=\"app-core\" 为唯一根的核心控件 HTML，随后输出 <!--openos:end-->。",
+    "<!--openos:stage:content:app-content--> 后输出以 id=\"app-content\" 为唯一根的初始内容 HTML，随后输出 <!--openos:end-->。",
+    "<!--openos:stage:actions:app-actions--> 后输出以 id=\"app-actions\" 为唯一根的次要操作/状态 HTML，随后输出 <!--openos:end-->。",
+    "后面三个块可以引用 shell 或其他已完成块里的 id；每个块必须标签闭合。不要重复整页、不要 JSON、不要转义 HTML。",
+  ].join("\n");
+  return { system: `${base.system}\n\n【渐进 HTML 协议】\n${protocol}`, user: base.user };
+}
+
 /** AppIR 模型输出：业务语义由模型决定，结构由 schema 和 Catalog 约束。 */
 export function buildAppIrPrompt(input: {
   name: string;
