@@ -112,8 +112,7 @@ export function extractProgressiveHtml(raw: string): string | null {
   const assembler = new ProgressiveHtmlAssembler();
   assembler.push(raw);
   assembler.finish();
-  const stage = assembler.latestStage();
-  return stage && PROGRESSIVE_HTML_STAGES.indexOf(stage) >= 1
+  return assembler.latestStage() === "actions"
     ? assembler.latestMarkup()
     : null;
 }

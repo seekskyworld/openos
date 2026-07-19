@@ -157,7 +157,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
 
     const progressiveMarkup = assembler.latestMarkup();
     const progressiveStage = assembler.latestStage();
-    if (progressiveMarkup && progressiveStage && progressiveStage !== "shell") {
+    if (progressiveMarkup && progressiveStage === "actions") {
       return {
         html: progressiveMarkup,
         provider: llm.provider,

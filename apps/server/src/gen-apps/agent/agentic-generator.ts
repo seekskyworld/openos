@@ -217,6 +217,25 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
             },
           );
           emitSnapshots(assembler.finish());
+          if (assembler.latestStage() !== "actions" && !out.text.includes("<!--openos:stage:")) {
+            try {
+              const repair = compileArtifact({
+                html: out.text,
+                provider: llm.provider,
+                model: out.model,
+              });
+              if (repair.markup) {
+                input.onPhase?.({ phase: "html-repair" });
+                input.onSnapshot?.({ stage: "repair", markup: repair.markup });
+              }
+            } catch (error) {
+              console.info(JSON.stringify({
+                scope: "gen-apps-agent",
+                outcome: "repair_snapshot_rejected",
+                message: error instanceof Error ? error.message : String(error),
+              }));
+            }
+          }
           return out.text;
         },
         {

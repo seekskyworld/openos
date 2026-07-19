@@ -9,6 +9,7 @@ import type {
   SuggestPortInput,
 } from "../ports.js";
 import type { UntrustedArtifact, UntrustedSuggestion } from "../domain.js";
+import { ProgressiveHtmlAssembler } from "../generation/progressive-html-stream.js";
 
 function escapeMarkup(value: string): string {
   return value
@@ -19,17 +20,22 @@ function escapeMarkup(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function buildDeterministicMarkup(input: GeneratePortInput): string {
+function buildDeterministicStageBlocks(input: GeneratePortInput): string[] {
   const name = escapeMarkup(input.name.trim() || "Generated App");
   const description = escapeMarkup(input.description.trim() || input.query.trim());
   const query = escapeMarkup(input.query.trim());
-  return `<main class="os-app os-column">
+  return [
+    `<!--openos:stage:shell--><main class="os-app os-column">
   <header class="os-toolbar" id="app-header"><strong class="os-toolbar-title">${name}</strong><span class="os-badge">Fake</span></header>
-  <section class="os-main os-fill" id="calculator-panel">
-    <div class="os-card os-column" id="calculator">
+  <section id="calculator-panel"><section id="app-core"></section><section id="app-content"></section><footer id="app-actions"></footer></section>
+</main><!--openos:end-->`,
+    `<!--openos:stage:core:app-core--><section class="os-main os-fill" id="app-core">
+  <div class="os-card os-column" id="calculator">
       <p id="app-description" class="os-caption">${description}</p>
       <output id="display" class="os-heading" data-expression="0">0</output>
-      <div class="os-grid" id="keys">
+  </div>
+</section><!--openos:end-->`,
+    `<!--openos:stage:content:app-content--><section class="os-main" id="app-content"><div class="os-grid" id="keys">
         <button id="key-clear" class="os-button os-danger" type="button" data-action="calc.clear" data-target="display">AC</button>
         <button id="key-7" class="os-button" type="button" data-action="calc.input" data-target="display" data-value="7">7</button>
         <button id="key-8" class="os-button" type="button" data-action="calc.input" data-target="display" data-value="8">8</button>
@@ -47,12 +53,9 @@ function buildDeterministicMarkup(input: GeneratePortInput): string {
         <button id="key-dot" class="os-button" type="button" data-action="calc.input" data-target="display" data-value=".">.</button>
         <button id="key-equals" class="os-button os-primary" type="button" data-action="calc.evaluate" data-target="display">=</button>
         <button id="key-plus" class="os-button" type="button" data-action="calc.input" data-target="display" data-value="+">+</button>
-      </div>
-      <button id="ai-explain" class="os-button" type="button" data-action="ai.patch" data-target="calculator-panel" data-prompt="解释当前计算器的使用方式">AI 说明</button>
-      <p id="source-query" class="os-caption">${query}</p>
-    </div>
-  </section>
-</main>`;
+      </div></section><!--openos:end-->`,
+    `<!--openos:stage:actions:app-actions--><footer class="os-main os-row" id="app-actions"><button id="ai-explain" class="os-button" type="button" data-action="ai.patch" data-target="calculator-panel" data-prompt="解释当前计算器的使用方式">AI 说明</button><p id="source-query" class="os-caption">${query}</p></footer><!--openos:end-->`,
+  ];
 }
 
 export class DeterministicFakeGenerator implements GenAppGenerator {
@@ -78,11 +81,19 @@ export class DeterministicFakeGenerator implements GenAppGenerator {
     input: GeneratePortInput,
     _signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
-    const markup = buildDeterministicMarkup(input);
+    const assembler = new ProgressiveHtmlAssembler();
     input.onPhase?.({ phase: "generating-html" });
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    input.onSnapshot?.({ stage: "shell", markup });
-    input.onPhase?.({ phase: "html-shell" });
+    for (const block of buildDeterministicStageBlocks(input)) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      for (const snapshot of assembler.push(block)) {
+        input.onSnapshot?.(snapshot);
+        input.onPhase?.({ phase: `html-${snapshot.stage}` });
+      }
+    }
+    const markup = assembler.latestMarkup();
+    if (!markup || assembler.latestStage() !== "actions") {
+      throw new Error(`Deterministic progressive HTML failed: ${assembler.latestFailure() ?? "incomplete stages"}`);
+    }
     return {
       html: markup,
       provider: "fake",

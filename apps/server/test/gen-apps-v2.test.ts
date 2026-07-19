@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -53,6 +54,7 @@ import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerpr
 import { resolveAppRecipe } from "../src/gen-apps/generation/app-recipe.js";
 import { AppIrStageAssembler } from "../src/gen-apps/generation/app-ir-stream.js";
 import {
+  extractProgressiveHtml,
   ProgressiveHtmlAssembler,
   PROGRESSIVE_HTML_STAGES,
 } from "../src/gen-apps/generation/progressive-html-stream.js";
@@ -81,6 +83,13 @@ const validAppIr = () => ({
   data: { note: "" },
   actions: { save: { kind: "local" as const, name: "state.save" } },
 });
+
+const progressiveHtmlModelBlocks = () => [
+  '<!--openos:stage:shell--><main id="app" class="os-app"><section id="app-core"></section><section id="app-content"></section><footer id="app-actions"></footer></main><!--openos:end-->',
+  '<!--openos:stage:core:app-core--><section id="app-core"><input id="query" type="search"><button id="search" type="button" data-action="web.search" data-source="query" data-target="app-content">搜索</button></section><!--openos:end-->',
+  '<!--openos:stage:content:app-content--><section id="app-content"><p id="result">初始内容</p></section><!--openos:end-->',
+  '<!--openos:stage:actions:app-actions--><footer id="app-actions"><button id="clear" type="button" data-action="toast" data-value="完成">完成</button></footer><!--openos:end-->',
+];
 
 test("AppIR validates model output and creates stable canonical cache keys", () => {
   const value = validAppIr();
@@ -154,12 +163,8 @@ test("AppIR stage assembler emits only complete ordered atomic snapshots", () =>
 });
 
 test("progressive HTML assembler emits only closed validated subtree snapshots", () => {
-  const stream = [
-    '<!--openos:stage:shell--><main id="app" class="os-app"><section id="app-core"></section><section id="app-content"></section><footer id="app-actions"></footer></main><!--openos:end-->',
-    '<!--openos:stage:core:app-core--><section id="app-core"><input id="query" type="search"><button id="search" type="button" data-action="web.search" data-source="query" data-target="app-content">搜索</button></section><!--openos:end-->',
-    '<!--openos:stage:content:app-content--><section id="app-content"><p id="result">初始内容</p></section><!--openos:end-->',
-    '<!--openos:stage:actions:app-actions--><footer id="app-actions"><button id="clear" type="button" data-action="toast" data-value="完成">完成</button></footer><!--openos:end-->',
-  ].join("");
+  const blocks = progressiveHtmlModelBlocks();
+  const stream = blocks.join("");
   const assembler = new ProgressiveHtmlAssembler();
   const snapshots = [
     ...assembler.push(stream.slice(0, 73)),
@@ -171,6 +176,8 @@ test("progressive HTML assembler emits only closed validated subtree snapshots",
   assert.ok(snapshots.every((snapshot) => snapshot.markup.startsWith('<main id="app" class="os-app">')));
   assert.match(assembler.latestMarkup() ?? "", /id="result"/);
   assert.match(assembler.latestMarkup() ?? "", /id="clear"/);
+  assert.equal(extractProgressiveHtml(blocks.slice(0, 2).join("")), null);
+  assert.match(extractProgressiveHtml(stream) ?? "", /id="clear"/);
 
   const incomplete = new ProgressiveHtmlAssembler();
   assert.deepEqual(incomplete.push('<!--openos:stage:shell--><main class="os-app">'), []);
@@ -200,6 +207,49 @@ test("cold generation prompt requests native HTML stages instead of AppIR", () =
   assert.match(prompt.system, /<!--openos:stage:actions:app-actions-->/);
   assert.match(prompt.system, /不要 JSON/);
   assert.doesNotMatch(prompt.system, /AppIR/);
+});
+
+test("LLM adapter converts an OpenAI-compatible token stream into four atomic HTML snapshots", async () => {
+  const blocks = progressiveHtmlModelBlocks();
+  const upstream = createHttpServer((request, response) => {
+    assert.equal(request.url, "/v1/chat/completions");
+    response.writeHead(200, { "content-type": "text/event-stream; charset=utf-8" });
+    blocks.forEach((content, index) => {
+      response.write(`data: ${JSON.stringify({ id: "progressive-test", model: "test-model", choices: [{ delta: { content } }], index })}\n\n`);
+    });
+    response.end("data: [DONE]\n\n");
+  });
+  await new Promise<void>((resolve, reject) => {
+    upstream.once("error", reject);
+    upstream.listen(0, "127.0.0.1", resolve);
+  });
+  const address = upstream.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  const directory = mkdtempSync(join(tmpdir(), "openos-progressive-llm-test-"));
+  try {
+    const generator = new LlmGenAppGenerator(loadServerEnv({
+      dataDir: directory,
+      llm: {
+        provider: "openai-compatible",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+        apiKey: "test-key",
+        model: "test-model",
+      },
+    }));
+    const snapshots: Array<{ stage: string; markup: string }> = [];
+    const artifact = await generator.generate({
+      query: "notes",
+      name: "Notes",
+      description: "Write notes",
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+    }, new AbortController().signal);
+    assert.deepEqual(snapshots.map((snapshot) => snapshot.stage), PROGRESSIVE_HTML_STAGES);
+    assert.match(artifact.html, /id="result"/);
+    assert.match(artifact.html, /id="clear"/);
+  } finally {
+    await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("cold app generation allows slow response headers without disabling idle protection", () => {

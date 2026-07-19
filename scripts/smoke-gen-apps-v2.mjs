@@ -169,7 +169,10 @@ try {
     idempotencyKey: "smoke-progressive-draft",
     bypassCache: true,
   });
-  assert(progressive.snapshotStages.includes("shell"), "model path did not emit an atomic HTML snapshot");
+  assert(
+    JSON.stringify(progressive.snapshotStages) === JSON.stringify(["shell", "core", "content", "actions"]),
+    `model path emitted invalid HTML stages: ${JSON.stringify(progressive.snapshotStages)}`,
+  );
   assert(progressive.firstDeltaMs < 500, `progressive HTML first snapshot regressed to ${progressive.firstDeltaMs}ms`);
 
   const patchStarted = performance.now();
