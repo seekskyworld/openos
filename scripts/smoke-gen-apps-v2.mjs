@@ -105,7 +105,7 @@ try {
   const suggestionResponse = await fetch(`${base}/gen-apps/suggestions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query: "calculator", count: 2 }),
+    body: JSON.stringify({ query: "browser", count: 2 }),
   });
   const suggestionBody = await suggestionResponse.json();
   const suggestionMs = performance.now() - suggestionStarted;
@@ -114,18 +114,18 @@ try {
   const generated = await streamDraft(base, {
     suggestion: {
       id: "smoke-suggestion",
-      name: "Calculator",
-      description: "Local calculator",
-      iconEmoji: "🧮",
-      iconTheme: "orange",
+      name: "Browser",
+      description: "Network search browser",
+      iconEmoji: "🌐",
+      iconTheme: "blue",
     },
-    query: "calculator",
+    query: "browser",
     idempotencyKey: "smoke-v2-draft",
   });
   const { draft } = generated;
   assert(draft.artifact.format === "openos-markup", "draft is not V2");
   assert(draft.artifact.html === "", "V2 wire payload repeated the runtime shell");
-  assert(draft.artifact.markup.includes('id="ai-explain"'), "V2 markup missing AI action");
+  assert(draft.artifact.markup.includes('data-action="web.search"'), "V2 markup missing web search action");
   assert(draft.runtimeSessionId, "draft runtime session missing");
 
   const patchStarted = performance.now();
@@ -137,7 +137,7 @@ try {
       body: JSON.stringify({
         runtimeSessionId: draft.runtimeSessionId,
         baseRevision: draft.artifact.revision,
-        event: { type: "click", targetId: "ai-explain", action: "ai.patch" },
+        event: { type: "click", targetId: "navigate", action: "web.search", value: "https://google.com" },
       }),
     },
   );
@@ -155,7 +155,7 @@ try {
       body: JSON.stringify({
         runtimeSessionId: draft.runtimeSessionId,
         baseRevision: draft.artifact.revision,
-        event: { type: "click", targetId: "ai-explain", action: "ai.patch" },
+        event: { type: "click", targetId: "navigate", action: "web.search", value: "https://google.com" },
       }),
     },
   );
@@ -206,7 +206,7 @@ try {
       body: JSON.stringify({
         runtimeSessionId: recoveredSessionId,
         baseRevision: resumeBody.revision,
-        event: { type: "click", targetId: "ai-explain", action: "ai.patch" },
+        event: { type: "click", targetId: "navigate", action: "web.search", value: "https://google.com" },
       }),
     },
   );

@@ -11,7 +11,7 @@ export const GEN_APP_FORMAT = "openos-markup";
 export const GEN_APP_FORMATS = [GEN_APP_LEGACY_FORMAT, GEN_APP_FORMAT] as const;
 export type GenAppArtifactFormat = (typeof GEN_APP_FORMATS)[number];
 export const GEN_APP_FORMAT_VERSION = 2;
-export const GEN_APP_RUNTIME_VERSION = 2;
+export const GEN_APP_RUNTIME_VERSION = 3;
 export const GEN_APP_POLICY_VERSION = 2;
 export const GEN_APP_PROMPT_VERSION = 2;
 export const GEN_APP_UI_KIT_VERSION = 1;
@@ -87,6 +87,7 @@ export const GEN_APP_LOCAL_ACTIONS = [
   "calc.backspace",
   "state.set",
   "toast",
+  "web.search",
   "ai.generate",
   "ai.patch",
 ] as const;
@@ -158,6 +159,7 @@ export const GEN_APP_ERROR_CODES = [
   "invalid_transition",
   "app_not_found",
   "storage_quota_exceeded",
+  "web_search_failed",
   "internal_error",
 ] as const;
 

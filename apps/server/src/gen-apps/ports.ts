@@ -61,6 +61,23 @@ export interface FragmentGenerator {
   ): Promise<string>;
 }
 
+export type WebSearchResult = {
+  title: string;
+  url: string;
+  snippet: string;
+};
+
+export type WebSearchResponse = {
+  query: string;
+  provider: string;
+  results: WebSearchResult[];
+};
+
+/** 固定出口的宿主网络搜索端口；生成 iframe 本身始终保持无网络权限。 */
+export interface WebSearchProvider {
+  search(query: string, signal: AbortSignal): Promise<WebSearchResponse>;
+}
+
 /** 兼容组合适配器；新编排代码依赖上面的最小能力端口。 */
 export interface GenAppGenerator
   extends SuggestionProvider,

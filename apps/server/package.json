@@ -29,6 +29,7 @@
     "@openos/shared": "0.1.0",
     "@openrouter/ai-sdk-provider": "^3.0.0",
     "ai": "^7.0.30",
+    "fast-xml-parser": "^5.10.1",
     "parse5": "^7.3.0"
   },
   "devDependencies": {

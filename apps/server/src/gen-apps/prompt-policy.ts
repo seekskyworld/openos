@@ -43,7 +43,7 @@ export function buildGeneratePrompt(input: {
     "1. 禁止输出 <html>/<head>/<body>/<style>/<script>/<link>/<meta>/<form>/<iframe>/<svg>；禁止任何 on* 事件属性、href/src、外链、CSS 和 JavaScript。",
     "2. 所有可点击或可变元素必须有稳定、语义化、嵌套粒度尽量细的唯一 id。button 一律 type=\"button\"。",
     "3. 所有按钮必须声明 data-action；需要操作另一个元素时同时声明 data-target=\"目标id\"。输入来源可用 data-source，按钮值用 data-value。",
-    "4. 优先使用宿主本地行为；只有确实需要模型理解/生成内容时才用 ai.generate 或 ai.patch。",
+    "4. 优先使用宿主本地行为；真实网络检索使用 web.search；只有需要模型虚构或改写内容时才用 ai.generate 或 ai.patch。",
     "5. 不绘制窗口外壳、标题栏、红黄绿圆点、壁纸或居中假窗口；最外层直接使用 class=\"os-app\" 铺满内容区。",
     "6. 首次只生成可用骨架和核心内容，深层内容按需生成；标记保持精简，避免重复占位数据。",
     `7. 应用定位风格：${TIER_GUIDANCE[input.tier]}`,
@@ -53,9 +53,9 @@ export function buildGeneratePrompt(input: {
     "布局：os-app / os-split / os-sidebar / os-main / os-toolbar / os-row / os-column / os-fill / os-grid / os-section。",
     "控件：os-button os-primary、os-icon-button、os-input、os-select、os-textarea、os-search、os-tabs/os-tab/os-tab-panel、os-list/os-list-item、os-card、os-table、os-modal/os-modal-dialog、os-status、os-badge、os-empty、os-progress。",
     "本地动作：tabs.select、toggle、modal.open、modal.close、list.select、list.add、list.remove、list.toggle、filter、sort、counter.increment、counter.decrement、calc.input、calc.evaluate、calc.clear、calc.backspace、state.set、toast。",
-    "生成动作：ai.generate 用于搜索/浏览/详情等新内容；ai.patch 用于修改当前最深层带 id 区块。",
+    "宿主动作：web.search 用于真实网络搜索，按钮必须同时声明 data-target 和 data-source；ai.generate 用于虚构/生成式浏览，ai.patch 用于修改当前最深层带 id 区块。",
     "示例：<button id=\"tab-notes\" class=\"os-tab\" data-action=\"tabs.select\" data-target=\"panel-notes\" type=\"button\">笔记</button>。",
-    "示例：<button id=\"search-action\" class=\"os-button os-primary\" data-action=\"ai.generate\" data-target=\"results\" data-source=\"search-input\" type=\"button\">搜索</button>。",
+    "示例：<button id=\"search-action\" class=\"os-button os-primary\" data-action=\"web.search\" data-target=\"results\" data-source=\"search-input\" type=\"button\">网络搜索</button>。",
     "示例：计算器数字键 data-action=\"calc.input\" data-target=\"display\" data-value=\"7\"；等号使用 calc.evaluate。",
   ].join("\n");
 

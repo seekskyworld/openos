@@ -80,7 +80,7 @@ function composeMarkup(input: BlueprintInput, intentKey: string): string {
       <div class="field-row"><button id="timer-start" class="os-button os-primary" type="button" data-action="toast" data-value="${isEnglish ? "Timer started" : "计时已开始"}">${isEnglish ? "Start" : "开始"}</button>
       <button id="timer-reset" class="os-button" type="button" data-action="state.set" data-target="timer-value" data-value="25:00">${isEnglish ? "Reset" : "重置"}</button></div>`,
     browser: `<div class="field-row"><input id="address" class="os-search" type="search" placeholder="${isEnglish ? "Search or enter address" : "搜索或输入地址"}">
-      <button id="navigate" class="os-button os-primary" type="button" data-action="ai.patch" data-target="browser-results" data-source="address">${isEnglish ? "Go" : "前往"}</button></div>
+      <button id="navigate" class="os-button os-primary" type="button" data-action="web.search" data-target="browser-results" data-source="address">${isEnglish ? "Go" : "前往"}</button></div>
       <section id="browser-results" class="os-card"><h2 class="os-subheading">${title}</h2><p>${description}</p></section>`,
     weather: `<div id="weather-now" class="os-card"><strong class="os-heading">22°</strong><p>${isEnglish ? "Clear · comfortable" : "晴朗 · 体感舒适"}</p></div>
       <div id="weather-days" class="os-list"><div class="os-list-item">${isEnglish ? "Tomorrow 21°" : "明天 21°"}</div><div class="os-list-item">${isEnglish ? "Next day 19°" : "后天 19°"}</div></div>`,

@@ -30,11 +30,14 @@ import {
 import type { GenAppGenerator } from "../src/gen-apps/ports.js";
 import { parseRuntimePatchProposal } from "../src/gen-apps/runtime-patch.js";
 import { RuntimeSessionStore } from "../src/gen-apps/runtime-session-store.js";
+import { RuntimeInteractionCoordinator } from "../src/gen-apps/runtime-interaction.js";
 import { createOpenOsDatabaseAt } from "../src/database/openos-database.js";
 import { loadServerEnv } from "../src/env.js";
 import { LlmGenAppGenerator } from "../src/gen-apps/infrastructure/llm-gen-app-generator.js";
 import { GenerationOrchestrator } from "../src/gen-apps/generation/generation-orchestrator.js";
 import { InMemoryGenerationCache } from "../src/gen-apps/infrastructure/in-memory-generation-cache.js";
+import { BingRssWebSearchProvider } from "../src/gen-apps/infrastructure/bing-rss-web-search-provider.js";
+import type { WebSearchProvider } from "../src/gen-apps/ports.js";
 import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight-generation.js";
 import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
 import { loadGenAppsSettings } from "../src/gen-apps/gen-app-settings.js";
@@ -598,6 +601,93 @@ test("runtime sessions isolate windows, advance revisions atomically, and expire
   );
   now += 31 * 60 * 1_000;
   assert.equal(store.read("session-a", "app-a"), null);
+});
+
+test("web.search opens search-engine landings and injects real provider results without an LLM", async () => {
+  const sessions = new RuntimeSessionStore();
+  const appId = "web-search-app";
+  const runtimeSessionId = "web-search-session";
+  sessions.register({
+    id: runtimeSessionId,
+    appId,
+    revision: 1,
+    interactionMode: "hybrid",
+    identity: {
+      id: appId,
+      name: "Browser",
+      description: "Network browser",
+      sourceQuery: "browser",
+      format: GEN_APP_FORMAT,
+    },
+    markup: '<main class="os-app"><input id="address"><button id="navigate" type="button" data-action="web.search" data-target="browser-results" data-source="address">Go</button><section id="browser-results">Ready</section></main>',
+  });
+  let searchCalls = 0;
+  const webSearch: WebSearchProvider = {
+    async search(query) {
+      searchCalls += 1;
+      return {
+        query,
+        provider: "Test Search",
+        results: [{
+          title: "OpenOS <result>",
+          url: "https://example.com/openos",
+          snippet: "A real result & useful summary",
+        }],
+      };
+    },
+  };
+  const coordinator = new RuntimeInteractionCoordinator({
+    generator: new DeterministicFakeGenerator(),
+    sessions,
+    language: () => "en",
+    webSearch,
+  });
+  const landing = await coordinator.execute(
+    {
+      identity: sessions.read(runtimeSessionId, appId)!.identity,
+      request: {
+        runtimeSessionId,
+        baseRevision: 1,
+        event: { type: "click", targetId: "navigate", action: "web.search", value: "https://google.com" },
+      },
+    },
+    new AbortController().signal,
+  );
+  assert.equal(landing.revision, 2);
+  assert(landing.ops[0].html.includes("Google"), landing.ops[0].html);
+  assert(landing.ops[0].html.includes('data-action="web.search"'));
+  assert.equal(searchCalls, 0);
+
+  const results = await coordinator.execute(
+    {
+      identity: sessions.read(runtimeSessionId, appId)!.identity,
+      request: {
+        runtimeSessionId,
+        baseRevision: 2,
+        event: { type: "click", targetId: "browser-results-web-submit", action: "web.search", value: "OpenOS" },
+      },
+    },
+    new AbortController().signal,
+  );
+  assert.equal(results.revision, 3);
+  assert.equal(searchCalls, 1);
+  assert(results.ops[0].html.includes("Test Search 网络结果"));
+  assert(results.ops[0].html.includes("OpenOS &lt;result&gt;"));
+  assert(!results.ops[0].html.includes("<result>"));
+});
+
+test("Bing RSS search adapter parses bounded structured results", async () => {
+  const rss = `<?xml version="1.0"?><rss><channel><item><title>OpenOS</title><link>https://example.com/openos</link><description>Desktop result</description></item><item><title>Unsafe</title><link>javascript:alert(1)</link><description>Skip</description></item></channel></rss>`;
+  const provider = new BingRssWebSearchProvider(async () =>
+    new Response(rss, { status: 200, headers: { "content-type": "application/rss+xml" } }),
+  );
+  const response = await provider.search("OpenOS", new AbortController().signal);
+  assert.equal(response.provider, "Bing");
+  assert.deepEqual(response.results, [{
+    title: "OpenOS",
+    url: "https://example.com/openos",
+    snippet: "Desktop result",
+  }]);
 });
 
 test("service generates V2 drafts and applies one repaired, revisioned AI patch", async () => {

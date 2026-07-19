@@ -366,7 +366,7 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     if (!target || !root.contains(target)) return;
     var action = target.getAttribute("data-action") || (target.hasAttribute("data-href") ? "ai.generate" : "");
     if (event.type === "click" && target.tagName === "A") event.preventDefault();
-    if (action === "ai.generate" || action === "ai.patch") {
+    if (action === "ai.generate" || action === "ai.patch" || action === "web.search") {
       if (event.type !== "input" || target.getAttribute("data-trigger") === "input") requestAi(target, event, action);
     }
     else if (event.type !== "click" && action !== "filter" && action !== "state.set") {

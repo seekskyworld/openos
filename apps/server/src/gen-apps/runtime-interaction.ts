@@ -13,7 +13,11 @@ import {
   resolveMarkupInteraction,
   type ResolvedMarkupInteraction,
 } from "./markup-artifact.js";
-import type { GenAppGenerator, GenAppIdentity } from "./ports.js";
+import type {
+  GenAppGenerator,
+  GenAppIdentity,
+  WebSearchProvider,
+} from "./ports.js";
 import {
   buildRuntimePatchPrompt,
   buildRuntimePatchRepairPrompt,
@@ -23,6 +27,11 @@ import {
   RuntimeSessionStore,
   type RuntimeSessionSnapshot,
 } from "./runtime-session-store.js";
+import {
+  renderSearchLanding,
+  renderWebSearchResults,
+  resolveWebSearchRequest,
+} from "./web-search.js";
 
 type InteractionContext = {
   session: RuntimeSessionSnapshot;
@@ -35,6 +44,7 @@ type CoordinatorDeps = {
   generator: GenAppGenerator;
   sessions: RuntimeSessionStore;
   language: () => GenAppLanguage;
+  webSearch?: WebSearchProvider;
 };
 
 /**
@@ -52,6 +62,9 @@ export class RuntimeInteractionCoordinator {
     externalSignal: AbortSignal,
   ): Promise<GenAppPatchBatch> {
     const context = this.resolveContext(input.identity.id, input.request);
+    if (context.declaredAction === "web.search") {
+      return this.executeWebSearch(input.identity.id, input.request, context, externalSignal);
+    }
     const prompt = buildRuntimePatchPrompt({
       appName: input.identity.name,
       appDescription: input.identity.description,
@@ -144,8 +157,11 @@ export class RuntimeInteractionCoordinator {
       );
     }
     const declaredAction = resolved.action ?? "ai.patch";
-    const isAiAction = declaredAction === "ai.generate" || declaredAction === "ai.patch";
-    if (!isAiAction && session.interactionMode !== "improv") {
+    const isRemoteAction =
+      declaredAction === "ai.generate" ||
+      declaredAction === "ai.patch" ||
+      declaredAction === "web.search";
+    if (!isRemoteAction && session.interactionMode !== "improv") {
       throw genAppError(
         "validation_failed",
         "This action is handled locally by the trusted runtime.",
@@ -164,6 +180,45 @@ export class RuntimeInteractionCoordinator {
       }
     }
     return { session, resolved, declaredAction, currentTargetHtml };
+  }
+
+  private async executeWebSearch(
+    appId: string,
+    request: GenAppInteractRequest,
+    context: InteractionContext,
+    signal: AbortSignal,
+  ): Promise<GenAppPatchBatch> {
+    const searchRequest = resolveWebSearchRequest(request.event.value);
+    let replacement: string;
+    if (searchRequest.kind === "landing") {
+      replacement = renderSearchLanding(
+        context.resolved.patchTargetId,
+        searchRequest.engineName,
+      );
+    } else {
+      if (!this.deps.webSearch) {
+        throw genAppError("web_search_failed", "Web search provider is unavailable.", 503, true);
+      }
+      const response = await this.deps.webSearch.search(searchRequest.query, signal);
+      replacement = renderWebSearchResults(context.resolved.patchTargetId, response);
+    }
+    const normalizedReplacement = compileReplacementMarkup(
+      replacement,
+      context.resolved.patchTargetId,
+    );
+    const nextMarkup = replaceMarkupElement(
+      context.session.markup,
+      context.resolved.patchTargetId,
+      normalizedReplacement,
+    );
+    return this.compileAndCommit({
+      appId,
+      request,
+      targetId: context.resolved.patchTargetId,
+      nextMarkup,
+      normalizedReplacement,
+      turns: [],
+    });
   }
 
   private async generateReplacement(input: {

@@ -48,7 +48,7 @@ RuntimeSession：每窗口独立 markup + revision + 有界模型历史
 关键行为：
 
 1. 通用控件动作（tab、弹层、列表、筛选、计数、计算器、toast）在 iframe 内本地执行，不调用模型。
-2. `ai.generate` / `ai.patch` 只发送事件类型、元素 id、输入值与当前目标快照；服务端从权威会话标记重新解析动作和目标。
+2. `web.search` / `ai.generate` / `ai.patch` 只发送事件类型、元素 id、输入值与当前目标快照；服务端从权威会话标记重新解析动作和目标。`web.search` 走固定搜索适配器并返回声明式 patch，不调用模型。
 3. 模型只提议一个 `replace` 操作；服务端校验 revision/target，清洗替换标记，失败时最多修复一次，再原子推进 revision。
 4. V2 iframe 只加载一次固定 Shell；流式与最终内容都通过 `postMessage` 渲染，不再随 token 重载 `srcDoc`。
 5. fantasy 档使用 `improv` 模式，未被本地运行时处理的声明式动作自动进入 AI 补丁路径。
