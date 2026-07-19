@@ -22,6 +22,7 @@ const GAME_KEYWORDS: Array<[GameEngineId, readonly string[]]> = [
   ["game.minesweeper", ["扫雷", "minesweeper", "mine sweeper"]],
   ["game.sudoku", ["数独", "sudoku"]],
   ["game.snake", ["贪吃蛇", "snake", "snake game", "classic snake"]],
+  ["game.platformer", ["超级玛丽", "超级马里奥", "马里奥", "横版跳跃", "平台跳跃", "super mario", "mario game", "platformer", "platform game"]],
 ];
 
 function resolveEngine(input: RecipeInput): GameEngineId | null {
@@ -42,6 +43,7 @@ function configFor(engine: GameEngineId, source: string): Record<string, number>
       : { rows: 9, columns: 9, mines: 10 };
   }
   if (engine === "game.snake") return { rows: 14, columns: 20, speedMs: expert ? 90 : 140 };
+  if (engine === "game.platformer") return { gravity: expert ? 1_950 : 1_700, speed: expert ? 300 : 260, jump: expert ? 660 : 620 };
   return { puzzle: 1 };
 }
 

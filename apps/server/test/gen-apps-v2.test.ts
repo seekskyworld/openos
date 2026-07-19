@@ -466,6 +466,7 @@ test("game recipes route common games to trusted local engines", () => {
     ["经典扫雷", "game.minesweeper", "game.minesweeper.reveal"],
     ["数独游戏", "game.sudoku", "game.sudoku.input"],
     ["贪吃蛇", "game.snake", "game.snake.start"],
+    ["超级玛丽", "game.platformer", "game.platformer.start"],
   ] as const;
   for (const [query, engine, action] of cases) {
     const recipe = resolveAppRecipe({
@@ -737,6 +738,13 @@ test("replacement compiler enforces one preserved target and normalizes the sess
         '<main class="os-app" data-engine="game.snake" data-rows="999" data-columns="999" data-speed="0"><div id="board"></div></main>',
       ),
     /棋盘尺寸/,
+  );
+  assert.throws(
+    () =>
+      sanitizeGenAppMarkup(
+        '<main class="os-app"><div id="platformer" data-engine="game.platformer" data-gravity="0" data-speed="9999" data-jump="0"></div></main>',
+      ),
+    /平台跳跃重力/,
   );
 });
 

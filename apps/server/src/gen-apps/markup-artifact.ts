@@ -1,5 +1,6 @@
 import {
   GEN_APP_LIMITS,
+  GEN_APP_PLATFORMER_LIMITS,
   isGenAppLocalAction,
   type GenAppDeclaredAction,
   type GenAppLocalAction,
@@ -106,6 +107,15 @@ function setAttr(element: Element, name: string, value: string): void {
 
 function gameConfigIssue(element: Element): string | null {
   const engine = attr(element, "data-engine");
+  if (engine === "game.platformer") {
+    const gravity = Number(attr(element, "data-gravity"));
+    const speed = Number(attr(element, "data-speed"));
+    const jump = Number(attr(element, "data-jump"));
+    if (!Number.isFinite(gravity) || gravity < GEN_APP_PLATFORMER_LIMITS.gravityMin || gravity > GEN_APP_PLATFORMER_LIMITS.gravityMax) return `平台跳跃重力必须在 ${GEN_APP_PLATFORMER_LIMITS.gravityMin}-${GEN_APP_PLATFORMER_LIMITS.gravityMax} 范围内。`;
+    if (!Number.isFinite(speed) || speed < GEN_APP_PLATFORMER_LIMITS.speedMin || speed > GEN_APP_PLATFORMER_LIMITS.speedMax) return `平台跳跃速度必须在 ${GEN_APP_PLATFORMER_LIMITS.speedMin}-${GEN_APP_PLATFORMER_LIMITS.speedMax} 范围内。`;
+    if (!Number.isFinite(jump) || jump < GEN_APP_PLATFORMER_LIMITS.jumpMin || jump > GEN_APP_PLATFORMER_LIMITS.jumpMax) return `平台跳跃跳跃力必须在 ${GEN_APP_PLATFORMER_LIMITS.jumpMin}-${GEN_APP_PLATFORMER_LIMITS.jumpMax} 范围内。`;
+    return null;
+  }
   if (engine !== "game.minesweeper" && engine !== "game.snake") return null;
   const rows = Number(attr(element, "data-rows"));
   const columns = Number(attr(element, "data-columns"));

@@ -3,7 +3,8 @@ import type { UntrustedArtifact } from "../domain.js";
 export type GameEngineId =
   | "game.minesweeper"
   | "game.sudoku"
-  | "game.snake";
+  | "game.snake"
+  | "game.platformer";
 
 export type GameRecipe = {
   engine: GameEngineId;
@@ -74,10 +75,38 @@ function snakeMarkup(recipe: GameRecipe): string {
   </main>`;
 }
 
+function platformerMarkup(recipe: GameRecipe): string {
+  const zh = recipe.language === "zh";
+  const gravity = recipe.config.gravity ?? 1_700;
+  const speed = recipe.config.speed ?? 260;
+  const jump = recipe.config.jump ?? 620;
+  const actionButton = (id: string, action: string, label: string) =>
+    `<button id="${id}" class="os-button" type="button" data-action="game.platformer.${action}" data-target="platformer-board">${label}</button>`;
+  return `<main class="os-app os-column">
+    <header class="os-toolbar"><strong class="os-toolbar-title">${zh ? "超级玛丽" : "Platform Adventure"}</strong><span class="os-badge">${zh ? "金币" : "Coins"}: <strong id="platformer-score">0</strong></span><span id="platformer-status" class="os-status">${zh ? "准备" : "Ready"}</span></header>
+    <section class="os-main os-column os-fill">
+      <div class="os-row"><button id="platformer-start" class="os-button os-primary" type="button" data-action="game.platformer.start" data-target="platformer-board">${zh ? "开始" : "Start"}</button>${actionButton("platformer-pause", "pause", zh ? "暂停" : "Pause")}${actionButton("platformer-reset", "reset", zh ? "重开" : "Reset")}</div>
+      <div id="platformer-board" class="os-platformer" data-engine="game.platformer" tabindex="0" data-gravity="${gravity}" data-speed="${speed}" data-jump="${jump}">
+        <div id="platformer-ground" class="os-platformer-platform" data-x="0" data-y="88" data-w="100" data-h="12"></div>
+        <div id="platformer-step-1" class="os-platformer-platform" data-x="22" data-y="70" data-w="18" data-h="6"></div>
+        <div id="platformer-step-2" class="os-platformer-platform" data-x="48" data-y="55" data-w="16" data-h="6"></div>
+        <div id="platformer-step-3" class="os-platformer-platform" data-x="70" data-y="72" data-w="13" data-h="6"></div>
+        <div id="platformer-coin-1" class="os-platformer-coin" data-x="29" data-y="60" aria-label="coin"></div>
+        <div id="platformer-coin-2" class="os-platformer-coin" data-x="54" data-y="45" aria-label="coin"></div>
+        <div id="platformer-goal" class="os-platformer-goal" data-x="92" data-y="66" aria-label="goal"></div>
+        <div id="platformer-player" class="os-platformer-player" data-start-x="7" data-start-y="76" aria-label="player"></div>
+      </div>
+      <div class="os-row os-game-controls">${actionButton("platformer-left", "left", "←")}${actionButton("platformer-jump", "jump", zh ? "跳跃" : "Jump")}${actionButton("platformer-right", "right", "→")}</div>
+      <p class="os-caption">${zh ? "方向键或 A/D 移动，空格/W/↑ 跳跃，到达旗帜获胜。" : "Move with arrows or A/D, jump with Space/W/Up, reach the flag to win."}</p>
+    </section>
+  </main>`;
+}
+
 const ENGINE_REGISTRY: Record<GameEngineId, EngineComposer> = {
   "game.minesweeper": minesweeperMarkup,
   "game.sudoku": sudokuMarkup,
   "game.snake": snakeMarkup,
+  "game.platformer": platformerMarkup,
 };
 
 export function composeGameEngine(recipe: GameRecipe): UntrustedArtifact {

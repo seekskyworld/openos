@@ -1,4 +1,8 @@
-import { GEN_APP_RUNTIME_VERSION, GEN_APP_UI_KIT_VERSION } from "./gen-apps.js";
+import {
+  GEN_APP_PLATFORMER_LIMITS,
+  GEN_APP_RUNTIME_VERSION,
+  GEN_APP_UI_KIT_VERSION,
+} from "./gen-apps.js";
 
 /**
  * OpenOS UI Kit V1：生成应用共享的视觉与交互语言。
@@ -18,6 +22,15 @@ export const GEN_APP_UI_KIT_CSS = String.raw`
   --os-accent: #007aff;
   --os-danger: #d70015;
   --os-success: #248a3d;
+  --os-platformer-sky: #5ab7ff;
+  --os-platformer-horizon: #d8f0ff;
+  --os-platformer-grass: #5ca94d;
+  --os-platformer-soil: #9a6337;
+  --os-platformer-player-red: #ef4040;
+  --os-platformer-player-skin: #f6bf70;
+  --os-platformer-player-blue: #3474d4;
+  --os-platformer-coin: #ffd84a;
+  --os-platformer-coin-border: #b87900;
   --os-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
   --os-radius: 8px;
 }
@@ -33,6 +46,15 @@ export const GEN_APP_UI_KIT_CSS = String.raw`
     --os-accent: #0a84ff;
     --os-danger: #ff453a;
     --os-success: #30d158;
+    --os-platformer-sky: #296b9f;
+    --os-platformer-horizon: #203748;
+    --os-platformer-grass: #4a8a42;
+    --os-platformer-soil: #704b31;
+    --os-platformer-player-red: #ff5a52;
+    --os-platformer-player-skin: #d9a764;
+    --os-platformer-player-blue: #4d8ce8;
+    --os-platformer-coin: #ffd84a;
+    --os-platformer-coin-border: #cc921d;
     --os-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
   }
 }
@@ -115,6 +137,14 @@ button.os-game-cell:hover { background: color-mix(in srgb, var(--os-accent) 14%,
 .os-snake-cell.is-snake { background: var(--os-accent); }
 .os-snake-cell.is-snake-head { background: var(--os-success); }
 .os-snake-cell.is-food { background: var(--os-danger); border-radius: 50%; transform: scale(.68); }
+.os-platformer { position: relative; width: min(100%, 760px); aspect-ratio: 16 / 9; margin: 8px auto; overflow: hidden; border: 1px solid var(--os-border); border-radius: 6px; outline: none; background: linear-gradient(var(--os-platformer-sky) 0 68%, var(--os-platformer-horizon) 68% 100%); box-shadow: inset 0 -28px 0 color-mix(in srgb, var(--os-platformer-grass) 24%, transparent); }
+.os-platformer:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--os-accent) 32%, transparent); }
+.os-platformer-platform { position: absolute; z-index: 2; border-top: 4px solid var(--os-platformer-grass); background: var(--os-platformer-soil); box-shadow: inset 0 3px color-mix(in srgb, var(--os-text) 18%, transparent); }
+.os-platformer-player { position: absolute; z-index: 5; width: 5%; height: 11%; border: 2px solid var(--os-danger); border-radius: 40% 40% 18% 18%; background: linear-gradient(var(--os-platformer-player-red) 0 36%, var(--os-platformer-player-skin) 36% 60%, var(--os-platformer-player-blue) 60%); box-shadow: 0 2px 0 color-mix(in srgb, var(--os-text) 20%, transparent); will-change: transform; }
+.os-platformer-player.is-running { transform-origin: center bottom; }
+.os-platformer-goal { position: absolute; z-index: 3; width: 2%; height: 22%; border-left: 4px solid var(--os-surface-2); background: linear-gradient(135deg, var(--os-success) 50%, transparent 51%) top right / 100% 36% no-repeat; }
+.os-platformer-coin { position: absolute; z-index: 3; width: 3%; aspect-ratio: 1; border: 2px solid var(--os-platformer-coin-border); border-radius: 50%; background: var(--os-platformer-coin); box-shadow: inset 2px 0 color-mix(in srgb, var(--os-surface-2) 55%, transparent); }
+.os-platformer-coin.is-collected { display: none; }
 .os-game-controls { justify-content: center; gap: 4px; }
 .is-busy { opacity: .66; pointer-events: none; }
 .is-hidden, [hidden] { display: none !important; }
@@ -142,6 +172,9 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   var state = Object.create(null);
   var gameState = Object.create(null);
   var activeSnakeBoardId = "";
+  var activePlatformerBoardId = "";
+  var platformerSelector = ".os-platformer";
+  var platformerLimits = ${JSON.stringify(GEN_APP_PLATFORMER_LIMITS)};
   var pending = Object.create(null);
   var requestSeq = 0;
   var activePatchRequestId = "";
@@ -521,12 +554,235 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     }
     return false;
   }
+  function platformerNumber(node, name, fallback, minimum, maximum) {
+    var raw = node.getAttribute(name);
+    var value = raw === null || raw === "" ? fallback : Number(raw);
+    return Math.min(maximum, Math.max(minimum, Number.isFinite(value) ? value : fallback));
+  }
+  function platformerRect(node, width, height) {
+    var x = platformerNumber(node, "data-x", 0, 0, 100) * width / 100;
+    var y = platformerNumber(node, "data-y", 0, 0, 100) * height / 100;
+    var rectWidth = platformerNumber(node, "data-w", 0, 0, 100) * width / 100;
+    var rectHeight = platformerNumber(node, "data-h", 0, 0, 100) * height / 100;
+    node.style.left = x + "px";
+    node.style.top = y + "px";
+    if (rectWidth) node.style.width = rectWidth + "px";
+    if (rectHeight) node.style.height = rectHeight + "px";
+    return { node: node, x: x, y: y, width: rectWidth || node.offsetWidth, height: rectHeight || node.offsetHeight };
+  }
+  function syncPlatformerGeometry(session) {
+    var width = Math.max(platformerLimits.boardWidthMin, session.board.clientWidth || session.width);
+    var height = Math.max(platformerLimits.boardHeightMin, session.board.clientHeight || session.height);
+    if (width === session.width && height === session.height) return;
+    var scaleX = width / session.width;
+    var scaleY = height / session.height;
+    session.x *= scaleX;
+    session.y *= scaleY;
+    session.startX *= scaleX;
+    session.startY *= scaleY;
+    session.width = width;
+    session.height = height;
+    session.playerWidth = Math.max(platformerLimits.playerWidthMin, session.player.offsetWidth || width * platformerLimits.playerWidthRatio);
+    session.playerHeight = Math.max(platformerLimits.playerHeightMin, session.player.offsetHeight || height * platformerLimits.playerHeightRatio);
+    session.platforms = session.platforms.map(function (platform) { return platformerRect(platform.node, width, height); });
+    session.coins = session.coins.map(function (coin) { return platformerRect(coin.node, width, height); });
+    session.goal = session.goal ? platformerRect(session.goal.node, width, height) : null;
+  }
+  function settlePlatformerSpawn(session) {
+    var bottom = session.y + session.playerHeight;
+    var nearest = null;
+    session.platforms.forEach(function (platform) {
+      var horizontal = session.x + session.playerWidth > platform.x && session.x < platform.x + platform.width;
+      var gap = platform.y - bottom;
+      if (horizontal && gap >= 0 && gap <= session.height * platformerLimits.spawnToleranceRatio && (!nearest || platform.y < nearest.y)) nearest = platform;
+    });
+    if (!nearest) return;
+    session.y = nearest.y - session.playerHeight;
+    session.grounded = true;
+  }
+  function renderPlatformer(session) {
+    session.player.style.transform = "translate(" + session.x + "px," + session.y + "px)";
+    session.player.setAttribute("data-runtime-x", String(Math.round(session.x)));
+    session.player.setAttribute("data-runtime-y", String(Math.round(session.y)));
+    session.player.setAttribute("data-runtime-frame", String(session.frameCount));
+    session.player.classList.toggle("is-running", session.running);
+    var score = gameStatus(session.board, "platformer-score");
+    if (score) score.textContent = String(session.score);
+  }
+  function platformerSession(board) {
+    var key = gameKey(board);
+    if (gameState[key]) return gameState[key];
+    var player = board.querySelector(".os-platformer-player");
+    if (!player) return null;
+    var width = Math.max(platformerLimits.boardWidthMin, board.clientWidth || platformerLimits.boardWidthDefault);
+    var height = Math.max(platformerLimits.boardHeightMin, board.clientHeight || platformerLimits.boardHeightDefault);
+    var platforms = Array.prototype.map.call(board.querySelectorAll(".os-platformer-platform"), function (node) { return platformerRect(node, width, height); });
+    var coins = Array.prototype.map.call(board.querySelectorAll(".os-platformer-coin"), function (node) { return platformerRect(node, width, height); });
+    var goalNode = board.querySelector(".os-platformer-goal");
+    var goal = goalNode ? platformerRect(goalNode, width, height) : null;
+    var playerWidth = Math.max(platformerLimits.playerWidthMin, player.offsetWidth || width * platformerLimits.playerWidthRatio);
+    var playerHeight = Math.max(platformerLimits.playerHeightMin, player.offsetHeight || height * platformerLimits.playerHeightRatio);
+    var startX = platformerNumber(player, "data-start-x", 7, 0, 100) * width / 100;
+    var startY = platformerNumber(player, "data-start-y", 76, 0, 100) * height / 100;
+    var session = {
+      board: board, player: player, width: width, height: height, playerWidth: playerWidth, playerHeight: playerHeight,
+      startX: startX, startY: startY, x: startX, y: startY, vx: 0, vy: 0,
+      gravity: platformerNumber(board, "data-gravity", platformerLimits.gravityDefault, platformerLimits.gravityMin, platformerLimits.gravityMax),
+      speed: platformerNumber(board, "data-speed", platformerLimits.speedDefault, platformerLimits.speedMin, platformerLimits.speedMax),
+      jump: platformerNumber(board, "data-jump", platformerLimits.jumpDefault, platformerLimits.jumpMin, platformerLimits.jumpMax),
+      platforms: platforms, coins: coins, goal: goal, score: 0, running: false, grounded: false,
+      left: false, right: false, manualDirection: 0, manualUntil: 0, frame: 0, frameCount: 0, lastTime: 0
+    };
+    gameState[key] = session;
+    settlePlatformerSpawn(session);
+    renderPlatformer(session);
+    return session;
+  }
+  function overlapPlatformer(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+  function stopPlatformer(session, message) {
+    if (session.frame) cancelAnimationFrame(session.frame);
+    session.frame = 0;
+    session.running = false;
+    session.lastTime = 0;
+    session.player.classList.remove("is-running");
+    var status = gameStatus(session.board, "platformer-status");
+    if (status) status.textContent = message;
+  }
+  function platformerFrame(session, now) {
+    if (!session.running || !session.board.isConnected) return;
+    syncPlatformerGeometry(session);
+    var delta = session.lastTime ? Math.min(platformerLimits.frameSecondsMax, Math.max(.001, (now - session.lastTime) / 1000)) : platformerLimits.initialFrameSeconds;
+    session.lastTime = now;
+    var direction = (session.right ? 1 : 0) - (session.left ? 1 : 0);
+    if (!direction && now < session.manualUntil) direction = session.manualDirection;
+    session.vx = direction * session.speed;
+    var previousBottom = session.y + session.playerHeight;
+    session.vy += session.gravity * delta;
+    session.x = Math.min(session.width - session.playerWidth, Math.max(0, session.x + session.vx * delta));
+    var nextY = session.y + session.vy * delta;
+    session.grounded = false;
+    // 场景配置使用百分比，物理帧使用像素；只在下落穿过平台顶面时吸附，避免从平台下方穿上去。
+    if (session.vy >= 0) {
+      var nextBottom = nextY + session.playerHeight;
+      session.platforms.forEach(function (platform) {
+        var horizontal = session.x + session.playerWidth > platform.x && session.x < platform.x + platform.width;
+        if (horizontal && previousBottom <= platform.y + platformerLimits.landingTolerance && nextBottom >= platform.y) {
+          nextY = Math.min(nextY, platform.y - session.playerHeight);
+          session.vy = 0;
+          session.grounded = true;
+        }
+      });
+    }
+    session.y = nextY;
+    session.frameCount++;
+    var playerRect = { x: session.x, y: session.y, width: session.playerWidth, height: session.playerHeight };
+    session.coins.forEach(function (coin) {
+      if (!coin.node.classList.contains("is-collected") && overlapPlatformer(playerRect, coin)) {
+        coin.node.classList.add("is-collected");
+        session.score++;
+      }
+    });
+    if (session.goal && overlapPlatformer(playerRect, session.goal)) {
+      renderPlatformer(session);
+      stopPlatformer(session, "Won / 通关");
+      return;
+    }
+    if (session.y > session.height + session.playerHeight) {
+      session.x = session.startX;
+      session.y = session.startY;
+      session.vx = 0;
+      session.vy = 0;
+      var status = gameStatus(session.board, "platformer-status");
+      if (status) status.textContent = "Try again / 再试一次";
+    }
+    renderPlatformer(session);
+    session.frame = requestAnimationFrame(function (time) { platformerFrame(session, time); });
+  }
+  function startPlatformer(session) {
+    if (!session || session.running) return Boolean(session);
+    session.running = true;
+    session.lastTime = 0;
+    var status = gameStatus(session.board, "platformer-status");
+    if (status) status.textContent = "Running / 进行中";
+    renderPlatformer(session);
+    session.frame = requestAnimationFrame(function (time) { platformerFrame(session, time); });
+    return true;
+  }
+  function resetPlatformer(board) {
+    if (!board) return false;
+    var key = gameKey(board);
+    var previous = gameState[key];
+    if (previous && previous.frame) cancelAnimationFrame(previous.frame);
+    gameState[key] = null;
+    var session = platformerSession(board);
+    if (!session) return false;
+    activePlatformerBoardId = board.id;
+    session.coins.forEach(function (coin) { coin.node.classList.remove("is-collected"); });
+    renderPlatformer(session);
+    stopPlatformer(session, "Ready / 准备");
+    return true;
+  }
+  function snapshotPlatformer(board) {
+    var session = gameState[gameKey(board)];
+    if (!session || !session.player) return null;
+    return {
+      x: session.x, y: session.y, vx: session.vx, vy: session.vy, score: session.score,
+      grounded: session.grounded, running: session.running, frameCount: session.frameCount,
+      left: session.left, right: session.right, manualDirection: session.manualDirection, manualUntil: session.manualUntil,
+      collected: session.coins.map(function (coin) { return coin.node.classList.contains("is-collected"); })
+    };
+  }
+  function restorePlatformer(board, snapshot) {
+    if (!snapshot) return;
+    var session = platformerSession(board);
+    if (!session) return;
+    session.x = Math.min(session.width - session.playerWidth, Math.max(0, Number(snapshot.x) || 0));
+    session.y = Math.min(session.height + session.playerHeight, Math.max(-session.playerHeight, Number(snapshot.y) || 0));
+    session.vx = Number(snapshot.vx) || 0;
+    session.vy = Number(snapshot.vy) || 0;
+    session.score = Math.max(0, Number(snapshot.score) || 0);
+    session.frameCount = Math.max(0, Number(snapshot.frameCount) || 0);
+    session.grounded = Boolean(snapshot.grounded);
+    session.left = Boolean(snapshot.left);
+    session.right = Boolean(snapshot.right);
+    session.manualDirection = Number(snapshot.manualDirection) || 0;
+    session.manualUntil = Math.max(0, Number(snapshot.manualUntil) || 0);
+    session.coins.forEach(function (coin, index) { coin.node.classList.toggle("is-collected", Boolean(snapshot.collected[index])); });
+    renderPlatformer(session);
+    if (snapshot.running) startPlatformer(session);
+  }
+  function runPlatformer(action, board) {
+    if (action.indexOf("game.platformer.") !== 0) return null;
+    if (action === "game.platformer.reset") return resetPlatformer(board);
+    if (!board) return false;
+    var session = platformerSession(board);
+    if (!session) return false;
+    activePlatformerBoardId = board.id;
+    board.focus();
+    if (action === "game.platformer.pause") { stopPlatformer(session, "Paused / 暂停"); return true; }
+    if (action === "game.platformer.start") return startPlatformer(session);
+    if (action === "game.platformer.left" || action === "game.platformer.right") {
+      session.manualDirection = action === "game.platformer.left" ? -1 : 1;
+      session.manualUntil = performance.now() + platformerLimits.controlDurationMs;
+      return startPlatformer(session);
+    }
+    if (action === "game.platformer.jump") {
+      startPlatformer(session);
+      if (session.grounded) { session.vy = -session.jump; session.grounded = false; }
+      return true;
+    }
+    return false;
+  }
   function runGameAction(action, node, target, value) {
     if (action === "game.minesweeper.reset") return resetMinesweeper(target);
     if (action === "game.minesweeper.reveal") return revealMineCell(node, target);
     var sudoku = runSudoku(action, node, target || node.closest(".os-sudoku"));
     if (sudoku !== null) return sudoku;
-    return runSnake(action, target, value);
+    var snake = runSnake(action, target, value);
+    if (snake !== null) return snake;
+    return runPlatformer(action, target);
   }
   function findGameNode(scope, selector) {
     if (scope.matches && scope.matches(selector)) return scope;
@@ -537,23 +793,29 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     if (mine) resetMinesweeper(mine);
     var snake = findGameNode(scope, ".os-snake");
     if (snake) resetSnake(snake);
+    var platformer = findGameNode(scope, ".os-platformer");
+    if (platformer) resetPlatformer(platformer);
   }
   function disposeGamesWithin(scope) {
     var boards = [];
-    if (scope.matches && scope.matches(".os-minesweeper, .os-snake")) boards.push(scope);
-    Array.prototype.forEach.call(scope.querySelectorAll ? scope.querySelectorAll(".os-minesweeper, .os-snake") : [], function (board) { boards.push(board); });
+    var selectors = ".os-minesweeper, .os-snake, " + platformerSelector;
+    if (scope.matches && scope.matches(selectors)) boards.push(scope);
+    Array.prototype.forEach.call(scope.querySelectorAll ? scope.querySelectorAll(selectors) : [], function (board) { boards.push(board); });
     boards.forEach(function (board) {
       var key = gameKey(board);
       var session = gameState[key];
       if (session && session.timer) clearInterval(session.timer);
+      if (session && session.frame) cancelAnimationFrame(session.frame);
       delete gameState[key];
       if (activeSnakeBoardId === board.id) activeSnakeBoardId = "";
+      if (activePlatformerBoardId === board.id) activePlatformerBoardId = "";
     });
   }
   function disposeGames() {
     disposeGamesWithin(root);
     gameState = Object.create(null);
     activeSnakeBoardId = "";
+    activePlatformerBoardId = "";
   }
   function runLocal(action, node) {
     var target = targetFor(node);
@@ -647,13 +909,42 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   document.addEventListener("input", onAction);
   document.addEventListener("change", onAction);
   document.addEventListener("keydown", function (event) {
-    if (!activeSnakeBoardId || asInput(event.target)) return;
+    if (asInput(event.target)) return;
+    var platformerBoard = byId(activePlatformerBoardId);
+    if (platformerBoard && document.activeElement === platformerBoard) {
+      var platformer = platformerSession(platformerBoard);
+      if (!platformer) return;
+      if (event.key === "ArrowLeft" || event.key === "a") platformer.left = true;
+      else if (event.key === "ArrowRight" || event.key === "d") platformer.right = true;
+      else if (event.key === "ArrowUp" || event.key === "w" || event.key === " ") {
+        startPlatformer(platformer);
+        if (platformer.grounded && !event.repeat) { platformer.vy = -platformer.jump; platformer.grounded = false; }
+      } else return;
+      event.preventDefault();
+      startPlatformer(platformer);
+      return;
+    }
+    if (!activeSnakeBoardId) return;
     var directions = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
     var direction = directions[event.key];
     if (!direction) return;
     event.preventDefault();
     setSnakeDirection(byId(activeSnakeBoardId), direction);
   });
+  document.addEventListener("keyup", function (event) {
+    var board = byId(activePlatformerBoardId);
+    var session = board ? platformerSession(board) : null;
+    if (!session) return;
+    if (event.key === "ArrowLeft" || event.key === "a") session.left = false;
+    if (event.key === "ArrowRight" || event.key === "d") session.right = false;
+  });
+  function releasePlatformerDirections() {
+    var board = byId(activePlatformerBoardId);
+    var session = board ? platformerSession(board) : null;
+    if (session) { session.left = false; session.right = false; }
+  }
+  window.addEventListener("blur", releasePlatformerDirections);
+  document.addEventListener("visibilitychange", function () { if (document.hidden) releasePlatformerDirections(); });
 
   window.addEventListener("message", function (event) {
     var message = event.data || {};
@@ -708,9 +999,13 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
         send("openos:patch-resync", { requestId: message.requestId });
         return;
       }
-      disposeGamesWithin(current);
+      var currentGameBoard = current.closest ? current.closest(".os-minesweeper, .os-snake, " + platformerSelector) : null;
+      var platformerSnapshot = currentGameBoard && currentGameBoard !== current && currentGameBoard.matches(platformerSelector) ? snapshotPlatformer(currentGameBoard) : null;
+      disposeGamesWithin(currentGameBoard || current);
       current.replaceWith(replacement);
-      initializeGamesWithin(replacement);
+      var reboundScope = currentGameBoard && currentGameBoard !== current ? currentGameBoard : replacement;
+      initializeGamesWithin(reboundScope);
+      if (platformerSnapshot) restorePlatformer(currentGameBoard, platformerSnapshot);
       revision = Number(patch.revision);
       delete pending[message.requestId];
       releasePatchRequest(message.requestId);

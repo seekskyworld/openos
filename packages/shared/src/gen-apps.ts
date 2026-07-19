@@ -12,10 +12,35 @@ export const GEN_APP_FORMAT = "openos-markup";
 export const GEN_APP_FORMATS = [GEN_APP_LEGACY_FORMAT, GEN_APP_FORMAT] as const;
 export type GenAppArtifactFormat = (typeof GEN_APP_FORMATS)[number];
 export const GEN_APP_FORMAT_VERSION = 2;
-export const GEN_APP_RUNTIME_VERSION = 5;
+export const GEN_APP_RUNTIME_VERSION = 6;
 export const GEN_APP_POLICY_VERSION = 2;
 export const GEN_APP_PROMPT_VERSION = 2;
-export const GEN_APP_UI_KIT_VERSION = 1;
+export const GEN_APP_UI_KIT_VERSION = 2;
+
+export const GEN_APP_PLATFORMER_LIMITS = {
+  boardWidthMin: 240,
+  boardHeightMin: 135,
+  boardWidthDefault: 760,
+  boardHeightDefault: 428,
+  playerWidthMin: 12,
+  playerHeightMin: 18,
+  playerWidthRatio: 0.05,
+  playerHeightRatio: 0.11,
+  gravityMin: 200,
+  gravityMax: 4_000,
+  gravityDefault: 1_700,
+  speedMin: 60,
+  speedMax: 800,
+  speedDefault: 260,
+  jumpMin: 100,
+  jumpMax: 1_200,
+  jumpDefault: 620,
+  frameSecondsMax: 0.032,
+  initialFrameSeconds: 0.016,
+  landingTolerance: 2,
+  spawnToleranceRatio: 0.08,
+  controlDurationMs: 320,
+} as const;
 
 export const GEN_APP_LIMITS = {
   /** HTML 制品最大字节数 */
@@ -98,6 +123,12 @@ export const GEN_APP_LOCAL_ACTIONS = [
   "game.snake.pause",
   "game.snake.reset",
   "game.snake.direction",
+  "game.platformer.start",
+  "game.platformer.pause",
+  "game.platformer.reset",
+  "game.platformer.left",
+  "game.platformer.right",
+  "game.platformer.jump",
   "ai.generate",
   "ai.patch",
 ] as const;
