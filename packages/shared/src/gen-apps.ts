@@ -194,6 +194,10 @@ export type GenAppSuggestion = {
   description: string;
   iconEmoji: string;
   iconTheme: GenAppIconTheme;
+  /** 模型候选与生成链共享的稳定路由提示；展示层不参与推断。 */
+  intentKey?: string;
+  variationSeed?: string;
+  routeHint?: "recipe" | "composition" | "generate";
 };
 
 /** 启动台所需元数据（不含 HTML） */
@@ -393,12 +397,18 @@ export function parseGenAppSuggestion(v: unknown): GenAppSuggestion | null {
   if (typeof v.description !== "string" || v.description.length > 300) return null;
   if (!isNonEmptyString(v.iconEmoji, 16)) return null;
   if (!isGenAppIconTheme(v.iconTheme)) return null;
+  if (v.intentKey !== undefined && !isNonEmptyString(v.intentKey, 120)) return null;
+  if (v.variationSeed !== undefined && !isNonEmptyString(v.variationSeed, 120)) return null;
+  if (v.routeHint !== undefined && v.routeHint !== "recipe" && v.routeHint !== "composition" && v.routeHint !== "generate") return null;
   return {
     id: v.id,
     name: v.name.trim(),
     description: v.description,
     iconEmoji: v.iconEmoji,
     iconTheme: v.iconTheme,
+    ...(v.intentKey === undefined ? {} : { intentKey: v.intentKey.trim() }),
+    ...(v.variationSeed === undefined ? {} : { variationSeed: v.variationSeed.trim() }),
+    ...(v.routeHint === undefined ? {} : { routeHint: v.routeHint }),
   };
 }
 

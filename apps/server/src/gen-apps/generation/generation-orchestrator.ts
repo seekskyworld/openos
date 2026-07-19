@@ -89,6 +89,9 @@ function sanitizeSuggestion(raw: UntrustedSuggestion, index: number): GenAppSugg
     iconTheme: isGenAppIconTheme(raw.iconTheme)
       ? raw.iconTheme
       : FALLBACK_THEMES[index % FALLBACK_THEMES.length],
+    ...(typeof raw.intentKey === "string" && raw.intentKey.trim() ? { intentKey: raw.intentKey.trim().slice(0, 120) } : {}),
+    ...(typeof raw.variationSeed === "string" && raw.variationSeed.trim() ? { variationSeed: raw.variationSeed.trim().slice(0, 120) } : {}),
+    ...(raw.routeHint === "recipe" || raw.routeHint === "composition" || raw.routeHint === "generate" ? { routeHint: raw.routeHint } : {}),
   };
 }
 

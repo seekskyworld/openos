@@ -44,6 +44,9 @@ export type UntrustedSuggestion = {
   description?: unknown;
   iconEmoji?: unknown;
   iconTheme?: unknown;
+  intentKey?: unknown;
+  variationSeed?: unknown;
+  routeHint?: unknown;
 };
 
 /** 模型返回的制品（未信任） */
