@@ -121,6 +121,7 @@ export function GenAppRunner({
         runtimeSessionId: current.runtimeSessionId,
         revision: current.revision,
         interactionMode: current.interactionMode,
+        appIr: current.appIr,
       },
       "*",
     );

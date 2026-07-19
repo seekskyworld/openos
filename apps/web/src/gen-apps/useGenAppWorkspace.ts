@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GenAppArtifactFormat,
+  AppIr,
   GenAppDraft,
   GenAppInteractRequest,
   GenAppInteractResponse,
@@ -95,6 +96,7 @@ export type RunningGenApp = {
   runtimeSessionId: string;
   revision: number;
   interactionMode: GenAppInteractionMode;
+  appIr?: AppIr;
   /** 仅全量 render/流式快照递增；局部 patch 不递增，避免覆盖 iframe 本地状态。 */
   renderSequence: number;
   /** draft = 关闭时需安装；installed = 直接关闭 */
@@ -314,6 +316,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           runtimeSessionId: draft.runtimeSessionId,
           revision: draft.artifact.revision,
           interactionMode: draft.artifact.interactionMode ?? "hybrid",
+          appIr: draft.artifact.appIr,
           renderSequence: 0,
           mode: "draft",
           status: "ready",
@@ -528,6 +531,7 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
           runtimeSessionId: bundle.runtimeSessionId,
           revision: bundle.artifact.revision,
           interactionMode: bundle.artifact.interactionMode ?? "hybrid",
+          appIr: bundle.artifact.appIr,
           renderSequence: 0,
           mode: "installed",
         };
