@@ -1,5 +1,5 @@
 import type { ServerEnv } from "../../env.js";
-import { createFastGenAppSuggestionSeeds } from "@openos/shared";
+import { createFastGenAppSuggestionSeeds, parseAppIr } from "@openos/shared";
 import { coreGenerate, type WireTarget } from "../../llm-core/index.js";
 import { resolveEffectiveLlm } from "../../settings-store.js";
 import {
@@ -8,6 +8,8 @@ import {
   loadGenAppsSettings,
 } from "../gen-app-settings.js";
 import { buildGeneratePrompt } from "../prompt-policy.js";
+import { buildAppIrPrompt } from "../prompt-policy.js";
+import { compileAppIr } from "../app-ir-compiler.js";
 import { genAppError, type UntrustedArtifact, type UntrustedSuggestion } from "../domain.js";
 import type {
   ContinuePortInput,
@@ -108,6 +110,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
     input: GeneratePortInput,
     signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
+    if (process.env.OPENOS_GENAPPS_OUTPUT === "appir") return this.generateAppIr(input, signal);
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
     const tier = creativityTier(settings.creativity);
@@ -146,6 +149,52 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       model: result.model,
       interactionMode: tier === "fantasy" ? "improv" : "hybrid",
     };
+  }
+
+  private async generateAppIr(
+    input: GeneratePortInput,
+    signal: AbortSignal,
+  ): Promise<UntrustedArtifact> {
+    const llm = this.ensureConfigured();
+    const settings = loadGenAppsSettings(this.env);
+    const prompt = buildAppIrPrompt({
+      name: input.name,
+      description: input.description,
+      query: input.query,
+      tier: creativityTier(settings.creativity),
+      language: settings.appLanguage,
+    });
+    input.onPhase?.({ phase: "generating-appir" });
+    const result = await coreGenerate(
+      {
+        protocol: llm.protocol,
+        target: this.wireTarget(llm),
+        timeoutMs: 120_000,
+        signal,
+        onDelta: input.onDelta,
+      },
+      {
+        model: llm.model,
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user },
+        ],
+        temperature: creativityGenerationTemperature(settings.creativity),
+        reasoningEffort: "off",
+        maxOutputTokens: 2_500,
+      },
+    );
+    const json = result.text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? result.text;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json.trim());
+    } catch {
+      throw genAppError("invalid_model_output", "Model returned invalid AppIR JSON.", 422, true);
+    }
+    const appIr = parseAppIr(parsed);
+    if (!appIr) throw genAppError("invalid_model_output", "Model returned an invalid AppIR.", 422, true);
+    const artifact = compileAppIr(appIr);
+    return { ...artifact, provider: llm.provider, model: result.model };
   }
 
   /**

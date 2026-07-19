@@ -67,6 +67,31 @@ export function buildGeneratePrompt(input: {
   return { system, user };
 }
 
+/** AppIR 模型输出：业务语义由模型决定，结构由 schema 和 Catalog 约束。 */
+export function buildAppIrPrompt(input: {
+  name: string;
+  description: string;
+  query: string;
+  tier: CreativityTier;
+  language: GenAppLanguage;
+}): { system: string; user: string } {
+  const system = [
+    "你是 OpenOS AppIR 应用设计器。模型负责决定应用的布局、文案、功能、行为和初始数据；宿主只负责渲染和执行已声明行为。",
+    "只输出一个 JSON 对象，不要 Markdown、解释或代码围栏。协议版本必须是 openos-appir/v1。",
+    "顶层字段：protocolVersion,catalogVersion,identity,root,components,data,actions,behavior,capabilities,engines,theme。",
+    "组件只能使用 surface、stack、column、text、button、input、list、table、chart、canvas、modal；每个组件必须有稳定 id，children 只能引用已有 id。",
+    "动作 kind 只能是 local、capability、ai；禁止脚本、CSS、任意表达式、URL、网络请求和源码字符串。",
+    "behavior 只能用 initial/states/transitions；transition 包含 event、targetState、updates（add/remove/replace/test JSON Pointer）、effects。",
+    "优先声明完整可用的行为图，让常见点击和输入无需再次调用模型；外部搜索、网页、文件、存储只能通过 capability action。",
+    `应用定位风格：${TIER_GUIDANCE[input.tier]}`,
+    LANGUAGE_GUIDANCE[input.language],
+  ].join("\n");
+  return {
+    system,
+    user: JSON.stringify({ 应用名: input.name, 应用描述: input.description, 来源搜索词: input.query }),
+  };
+}
+
 const CONTINUE_INTENT_GUIDANCE: Record<GenAppContinueIntent, string> = {
   browse:
     "为给定 URL 或搜索词生成完整、可读、内容丰富的网页正文片段。可点击链接使用 id + data-href + data-action=\"ai.generate\"，不要 href。",
