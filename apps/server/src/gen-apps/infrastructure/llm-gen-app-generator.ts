@@ -110,7 +110,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
     input: GeneratePortInput,
     signal: AbortSignal,
   ): Promise<UntrustedArtifact> {
-    if (process.env.OPENOS_GENAPPS_OUTPUT === "appir") return this.generateAppIr(input, signal);
+    if (process.env.OPENOS_GENAPPS_OUTPUT !== "html") return this.generateAppIr(input, signal);
     const llm = this.ensureConfigured();
     const settings = loadGenAppsSettings(this.env);
     const tier = creativityTier(settings.creativity);
@@ -189,6 +189,15 @@ export class LlmGenAppGenerator implements GenAppGenerator {
     try {
       parsed = JSON.parse(json.trim());
     } catch {
+      // 迁移期允许模型仍返回旧声明式 HTML；后续可通过环境变量强制只收 AppIR。
+      if (/<[a-z][\s\S]*>/i.test(result.text)) {
+        return {
+          html: result.text,
+          provider: llm.provider,
+          model: result.model,
+          interactionMode: "hybrid",
+        };
+      }
       throw genAppError("invalid_model_output", "Model returned invalid AppIR JSON.", 422, true);
     }
     const appIr = parseAppIr(parsed);
