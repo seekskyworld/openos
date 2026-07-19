@@ -1,5 +1,6 @@
 import type { ServerEnv } from "../../env.js";
 import { coreGenerate, type CoreMessage, type WireTarget } from "../../llm-core/index.js";
+import { GEN_APP_LLM_BUDGETS } from "../llm-budgets.js";
 import { resolveEffectiveLlm } from "../../settings-store.js";
 import { compileArtifact } from "../artifact-compiler.js";
 import {
@@ -193,7 +194,9 @@ export class AgenticGenAppGenerator implements GenAppGenerator {
             {
               protocol: llm.protocol,
               target,
-              timeoutMs: 600_000,
+              timeoutMs: GEN_APP_LLM_BUDGETS.generationTotalMs,
+              headerTimeoutMs: GEN_APP_LLM_BUDGETS.generationHeaderMs,
+              idleTimeoutMs: GEN_APP_LLM_BUDGETS.generationIdleMs,
               signal: roundSignal,
               onDelta: input.onDelta,
             },

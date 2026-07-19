@@ -52,6 +52,7 @@ import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight
 import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
 import { resolveAppRecipe } from "../src/gen-apps/generation/app-recipe.js";
 import { AppIrStageAssembler } from "../src/gen-apps/generation/app-ir-stream.js";
+import { GEN_APP_LLM_BUDGETS } from "../src/gen-apps/llm-budgets.js";
 import {
   clampAgentMaxRounds,
   loadGenAppsSettings,
@@ -145,6 +146,12 @@ test("AppIR stage assembler emits only complete ordered atomic snapshots", () =>
   const behaviorFirst = JSON.stringify({ stage: "behavior", ir: validAppIr() });
   const surfaceAfter = JSON.stringify({ stage: "surface", ir: validAppIr() });
   assert.equal(duplicate.push(`${behaviorFirst}\n${surfaceAfter}\n`).length, 1);
+});
+
+test("cold app generation allows slow response headers without disabling idle protection", () => {
+  assert.ok(GEN_APP_LLM_BUDGETS.generationHeaderMs > 30_000);
+  assert.ok(GEN_APP_LLM_BUDGETS.generationHeaderMs < GEN_APP_LLM_BUDGETS.generationTotalMs);
+  assert.ok(GEN_APP_LLM_BUDGETS.generationIdleMs < GEN_APP_LLM_BUDGETS.generationTotalMs);
 });
 
 test("suggestions are complete without waiting for an LLM provider", async () => {

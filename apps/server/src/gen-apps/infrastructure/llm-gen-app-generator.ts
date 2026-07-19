@@ -11,6 +11,7 @@ import { buildGeneratePrompt } from "../prompt-policy.js";
 import { buildAppIrPrompt } from "../prompt-policy.js";
 import { compileAppIr } from "../app-ir-compiler.js";
 import { AppIrStageAssembler } from "../generation/app-ir-stream.js";
+import { GEN_APP_LLM_BUDGETS } from "../llm-budgets.js";
 import { genAppError, type UntrustedArtifact, type UntrustedSuggestion } from "../domain.js";
 import type {
   ContinuePortInput,
@@ -128,7 +129,9 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
-        timeoutMs: 600_000,
+        timeoutMs: GEN_APP_LLM_BUDGETS.generationTotalMs,
+        headerTimeoutMs: GEN_APP_LLM_BUDGETS.generationHeaderMs,
+        idleTimeoutMs: GEN_APP_LLM_BUDGETS.generationIdleMs,
         signal,
         onDelta: input.onDelta,
       },
@@ -180,7 +183,9 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
-        timeoutMs: 120_000,
+        timeoutMs: GEN_APP_LLM_BUDGETS.generationTotalMs,
+        headerTimeoutMs: GEN_APP_LLM_BUDGETS.generationHeaderMs,
+        idleTimeoutMs: GEN_APP_LLM_BUDGETS.generationIdleMs,
         signal,
         onDelta: consumeChunk,
       },
@@ -237,7 +242,9 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
-        timeoutMs: 90_000,
+        timeoutMs: GEN_APP_LLM_BUDGETS.continuationTotalMs,
+        headerTimeoutMs: GEN_APP_LLM_BUDGETS.continuationHeaderMs,
+        idleTimeoutMs: GEN_APP_LLM_BUDGETS.continuationIdleMs,
         signal,
       },
       {
