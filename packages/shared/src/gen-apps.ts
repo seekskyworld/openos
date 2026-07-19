@@ -4,6 +4,7 @@
  * 不导出任何数据库 Row —— Storage Row 属于服务端 Repository Adapter。
  * 见 docs/gen-apps-design.md §6。
  */
+import { parseAppIr, type AppIr } from "./gen-app-ir.js";
 
 // ===== 版本常量（集中定义，禁止散落 magic number）=====
 export const GEN_APP_LEGACY_FORMAT = "html-single-file";
@@ -228,6 +229,8 @@ export type GenAppArtifact = {
   actions?: GenAppDeclaredAction[];
   kitVersion?: number;
   interactionMode?: GenAppInteractionMode;
+  /** AppIR 模型制品；旧 HTML/V2 制品不提供。 */
+  appIr?: AppIr;
   contentSha256: string;
   sizeBytes: number;
 };
@@ -457,6 +460,9 @@ export function parseGenAppArtifact(v: unknown): GenAppArtifact | null {
     v.interactionMode === "hybrid" || v.interactionMode === "improv"
       ? v.interactionMode
       : undefined;
+  const parsedAppIr = v.appIr === undefined ? undefined : parseAppIr(v.appIr);
+  if (v.appIr !== undefined && !parsedAppIr) return null;
+  const appIr = parsedAppIr ?? undefined;
   const actions = Array.isArray(v.actions)
     ? v.actions
         .map((entry): GenAppDeclaredAction | null => {
@@ -484,6 +490,7 @@ export function parseGenAppArtifact(v: unknown): GenAppArtifact | null {
     actions,
     kitVersion: typeof v.kitVersion === "number" ? v.kitVersion : undefined,
     interactionMode,
+    appIr,
     contentSha256: v.contentSha256,
     sizeBytes: v.sizeBytes,
   };

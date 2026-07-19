@@ -65,5 +65,6 @@ export function compileAppIr(input: AppIr): UntrustedArtifact {
     provider: "openos-appir",
     model: `appir-${input.catalogVersion}`,
     interactionMode: "hybrid",
+    appIr: input,
   };
 }

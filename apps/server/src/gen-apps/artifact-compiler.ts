@@ -44,6 +44,7 @@ export function compileArtifact(untrusted: UntrustedArtifact): ValidatedArtifact
     actions,
     kitVersion: GEN_APP_UI_KIT_VERSION,
     interactionMode,
+    appIr: untrusted.appIr,
     contentSha256: createHash("sha256").update(html).digest("hex"),
     sizeBytes,
     formatVersion: GEN_APP_FORMAT_VERSION,

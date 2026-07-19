@@ -8,6 +8,7 @@ import type {
   GenAppLaunchBundle,
   GenAppSuggestion,
   GenAppSummary,
+  AppIr,
 } from "@openos/shared";
 
 /**
@@ -56,6 +57,7 @@ export type UntrustedArtifact = {
   model: string;
   /** V2 交互策略由可信设置映射，不从模型文本读取。 */
   interactionMode?: GenAppInteractionMode;
+  appIr?: AppIr;
 };
 
 declare const validatedBrand: unique symbol;
@@ -69,6 +71,7 @@ export type ValidatedArtifact = {
   actions?: GenAppDeclaredAction[];
   kitVersion?: number;
   interactionMode?: GenAppInteractionMode;
+  appIr?: AppIr;
   contentSha256: string;
   sizeBytes: number;
   formatVersion: number;

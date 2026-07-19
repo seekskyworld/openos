@@ -64,6 +64,7 @@ function toArtifact(row: ArtifactRow): GenAppArtifact {
     actions?: GenAppArtifact["actions"];
     kitVersion?: number;
     interactionMode?: GenAppArtifact["interactionMode"];
+    appIr?: GenAppArtifact["appIr"];
   } = {};
   if (row.payload_json) {
     try {
@@ -88,6 +89,7 @@ function toArtifact(row: ArtifactRow): GenAppArtifact {
           actions: payload.actions ?? [],
           kitVersion: payload.kitVersion,
           interactionMode: payload.interactionMode ?? "hybrid",
+          ...(payload.appIr ? { appIr: payload.appIr } : {}),
         }
       : {}),
     contentSha256: row.content_sha256,
@@ -149,6 +151,7 @@ export class SqliteGenAppRepository implements GenAppRepository {
                 actions: artifact.actions ?? [],
                 kitVersion: artifact.kitVersion,
                 interactionMode: artifact.interactionMode ?? "hybrid",
+                ...(artifact.appIr ? { appIr: artifact.appIr } : {}),
               })
             : null,
         );
@@ -178,6 +181,7 @@ export class SqliteGenAppRepository implements GenAppRepository {
         actions: artifact.actions,
         kitVersion: artifact.kitVersion,
         interactionMode: artifact.interactionMode,
+        appIr: artifact.appIr,
         contentSha256: artifact.contentSha256,
         sizeBytes: artifact.sizeBytes,
       },
