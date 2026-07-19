@@ -17,6 +17,7 @@ import {
   createAppIrCacheKey,
   parseAppIr,
   validateAppIr,
+  dispatchAppIrEvent,
 } from "@openos/shared";
 import { compileArtifact, compileFragment } from "../src/gen-apps/artifact-compiler.js";
 import { compileAppIr } from "../src/gen-apps/app-ir-compiler.js";
@@ -99,6 +100,24 @@ test("AppIR compiler emits V2 markup without executing model code", () => {
   assert.match(artifact.html, /class="os-app os-column"/);
   assert.match(artifact.html, /data-action="state\.save"/);
   assert.doesNotMatch(artifact.html, /<script/i);
+});
+
+test("AppIR behavior graph runs local transitions and data patches", () => {
+  const ir = validAppIr();
+  ir.behavior = {
+    initial: "idle",
+    states: {
+      idle: {
+        transitions: [{ event: "save", targetState: "saved", updates: [{ op: "replace", path: "/note", value: "saved" }], effects: ["toast"] }],
+      },
+      saved: { transitions: [] },
+    },
+  };
+  const result = dispatchAppIrEvent(ir, { activeState: "idle", data: { note: "draft" } }, { type: "save" });
+  assert.equal(result.handled, true);
+  assert.equal(result.activeState, "saved");
+  assert.deepEqual(result.data, { note: "saved" });
+  assert.deepEqual(result.effects, ["toast"]);
 });
 
 test("suggestions are complete without waiting for an LLM provider", async () => {

@@ -1093,3 +1093,4 @@ export * from "./gen-apps.js";
 export * from "./gen-app-runtime.js";
 export * from "./gen-app-suggestions.js";
 export * from "./gen-app-ir.js";
+export * from "./gen-app-ir-runtime.js";
