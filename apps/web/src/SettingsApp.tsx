@@ -734,7 +734,7 @@ export function SettingsApp({ onClose, onSaved }: Props) {
                 </span>
                 <input
                   type="range"
-                  min={1}
+                  min={2}
                   max={3}
                   step={1}
                   value={genSettings.agentMaxRounds}

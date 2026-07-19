@@ -33,7 +33,7 @@ fingerprint（prompt / policy / UI Kit / runtime 版本）
 - 缓存 fingerprint 包含供应商/协议/端点/模型、策略版本、blueprint/UI Kit/runtime 版本和 creativity tier，切换模型或升级任一版本会自然失效；SQLite 按 TTL、大小和 LRU 淘汰，且不记录 API Key。
 - 同一 fingerprint 的并发请求共享底层模型调用，订阅者各自接收流式 delta；最后一个订阅者取消才中止底层任务。
 
-默认 `generationMode` 为 `fast`（兼容内部称呼 Instant）；`agentic` 仅在用户显式选择精修模式时启用且限制为 1-3 轮。游戏优先走 recipe/engine，常见工具走本地 blueprint，未知需求走单轮 Instant，只有可由声明式标记修复的场景才支付有限多轮延迟。
+默认 `generationMode` 为 `fast`（兼容内部称呼 Instant）；`agentic` 仅在用户显式选择精修模式时启用且限制为 2-3 轮。游戏优先走 recipe/engine，常见工具走本地 blueprint，未知需求走单轮 Instant，只有可由声明式标记修复的场景才支付有限多轮延迟。
 
 ## Hybrid Generative Runtime V2（已实施）
 

@@ -111,6 +111,30 @@ try {
   const suggestionMs = performance.now() - suggestionStarted;
   assert(suggestionResponse.ok && suggestionBody.suggestions.length === 2, "suggestions failed");
 
+  const recipeTimes = [];
+  for (let index = 0; index < 12; index += 1) {
+    const started = performance.now();
+    const recipe = await streamDraft(base, {
+      suggestion: {
+        id: `recipe-${index}`,
+        name: "贪吃蛇",
+        description: "本地可玩的贪吃蛇",
+        iconEmoji: "🐍",
+        iconTheme: "green",
+      },
+      query: "贪吃蛇",
+      idempotencyKey: `smoke-recipe-${index}`,
+    });
+    assert(
+      recipe.draft.artifact.markup.includes('data-engine="game.snake"'),
+      "recipe did not select snake engine",
+    );
+    recipeTimes.push(performance.now() - started);
+  }
+  recipeTimes.sort((a, b) => a - b);
+  const recipeP95Ms = recipeTimes[Math.ceil(recipeTimes.length * 0.95) - 1];
+  assert(recipeP95Ms < 50, `recipe P95 exceeded 50ms: ${recipeP95Ms.toFixed(1)}ms`);
+
   const generated = await streamDraft(base, {
     suggestion: {
       id: "smoke-suggestion",
@@ -248,6 +272,7 @@ try {
           suggestionMs: Math.round(suggestionMs),
           firstDeltaMs: Math.round(generated.firstDeltaMs),
           generationMs: Math.round(generated.totalMs),
+          recipeP95Ms: Math.round(recipeP95Ms * 100) / 100,
           patchMs: Math.round(patchMs),
           revisionRecovery: true,
           wireBytes,

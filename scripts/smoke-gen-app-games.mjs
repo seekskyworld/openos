@@ -34,18 +34,24 @@ setTimeout(function () {
     var before = document.querySelector(".is-snake-head").id;
     document.getElementById("snake-start").click();
     setTimeout(function () {
+      var board = document.getElementById("snake-board");
+      window.postMessage({ type: "openos:patch", requestId: "game-patch", patch: { baseRevision: 1, revision: 2, ops: [{ op: "replace", targetId: "snake-board", html: board.outerHTML }] } }, "*");
+      setTimeout(function () { document.getElementById("snake-start").click(); }, 10);
+    }, 25);
+    setTimeout(function () {
       document.getElementById("snake-pause").click();
       var result = {
         mineRevealed: document.getElementById("mine-0").classList.contains("is-revealed"),
         sudokuSolved: document.getElementById("sudoku-status").textContent.indexOf("Solved") >= 0,
         snakeMoved: document.querySelector(".is-snake-head").id !== before,
-        snakePaused: document.getElementById("snake-status").textContent.indexOf("Paused") >= 0
+        snakePaused: document.getElementById("snake-status").textContent.indexOf("Paused") >= 0,
+        patchRebound: document.getElementById("snake-board").children.length === 25
       };
       var output = document.createElement("pre");
       output.id = "game-smoke-result";
       output.textContent = JSON.stringify(result);
       document.body.appendChild(output);
-    }, 75);
+    }, 115);
   }, 20);
 }, 0);
 </script>`;
@@ -86,6 +92,7 @@ try {
   assert(result.sudokuSolved, "sudoku did not validate the solution");
   assert(result.snakeMoved, "snake animation did not advance");
   assert(result.snakePaused, "snake did not pause");
+  assert(result.patchRebound, "snake board patch did not rebind the local engine");
   console.log(JSON.stringify({ result: "PASS", ...result }));
 } finally {
   await new Promise((resolve) => server.close(resolve));

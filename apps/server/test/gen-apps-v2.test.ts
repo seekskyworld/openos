@@ -517,7 +517,7 @@ test("legacy Gen Apps settings migrate to the Instant default", () => {
 
 test("Gen Apps refinement rounds are finite and bounded", () => {
   assert.equal(clampAgentMaxRounds(0), 3);
-  assert.equal(clampAgentMaxRounds(1), 1);
+  assert.equal(clampAgentMaxRounds(1), 2);
   assert.equal(clampAgentMaxRounds(2), 2);
   assert.equal(clampAgentMaxRounds(10), 3);
 });
@@ -631,6 +631,13 @@ test("replacement compiler enforces one preserved target and normalizes the sess
         `<main class="os-app">${"<span>x</span>".repeat(GEN_APP_LIMITS.markupNodeMaxCount)}</main>`,
       ),
     /node limit/,
+  );
+  assert.throws(
+    () =>
+      sanitizeGenAppMarkup(
+        '<main class="os-app" data-engine="game.snake" data-rows="999" data-columns="999" data-speed="0"><div id="board"></div></main>',
+      ),
+    /棋盘尺寸/,
   );
 });
 

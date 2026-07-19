@@ -55,7 +55,7 @@ type AgentLoopDeps = {
   validate(html: string): ValidationIssue[];
   extractHtml(raw: string): string;         // 代码块提取（复用现有 extract 逻辑）
   onProgress?(event: AgentProgressEvent): void;
-  maxRounds: number;                        // 1-4
+  maxRounds: number;                        // 2-3
   roundTimeoutMs: number;                   // 90_000
 };
 
@@ -120,7 +120,7 @@ const genAppsGenerator =
 `gen-app-settings.ts`：
 
 - `generationMode: "fast" | "agentic"`（默认 `"fast"`）+ `clampMode`
-- `agentMaxRounds: number`（默认 3，clamp 1-4）
+- `agentMaxRounds: number`（默认 3，clamp 2-3；0 会迁移为 3，不再无限循环）
 - `PUT /api/settings/gen-apps` 透传两字段（已有路由，加两行）
 
 ### 3.2 前端设置页

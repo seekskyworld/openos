@@ -95,7 +95,7 @@ type AgentRunResult = {
 
 | 项 | 默认值 | 说明 |
 | --- | --- | --- |
-| 最大轮次 | 3（首轮 + 2 修复轮） | 设置可调 1-4；实证超过 3 轮收益急剧下降 |
+| 最大轮次 | 3（首轮 + 2 修复轮） | 设置可调 2-3；游戏/recipe 不进入 AgentLoop |
 | 单轮超时 | 90s | 每轮独立计时（沿用 llm-core timeoutMs） |
 | 整体预算 | 240s | 由 Service 层 AbortSignal.timeout 控制，超时中断当前轮 |
 | 修复轮温度 | 0.2（固定低温） | 修复是收敛任务，与 creativity 档位无关 |
@@ -173,15 +173,15 @@ type AgentProgressEvent =
   "suggestionCount": 6,
   "creativity": 25,
   "appLanguage": "auto",
-  "generationMode": "agentic",     // "fast" 单发 | "agentic" 循环（默认）
-  "agentMaxRounds": 3              // 1-4
+  "generationMode": "fast",        // "fast" 单发 | "agentic" 循环（显式）
+  "agentMaxRounds": 3              // 2-3
 }
 ```
 
 设置页「AI 应用」增加：
 
 - 生成模式分段控件：快速（单发，约 30-60s）/ 精修（agent 循环，约 1-3 分钟，更可靠）；
-- 精修轮次滑杆 1-4（仅精修模式显示）。
+- 精修轮次滑杆 2-3（仅精修模式显示）。
 
 组合根按 `generationMode` 装配 `LlmGenAppGenerator` 或 `AgenticGenAppGenerator`（每请求读取设置，支持热切换）。
 

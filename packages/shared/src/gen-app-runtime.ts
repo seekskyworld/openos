@@ -340,7 +340,7 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   function ensureMinesweeper(board, safeIndex) {
     var key = gameKey(board);
     if (gameState[key]) return gameState[key];
-    var total = board.children.length;
+    var total = Math.min(board.children.length, 1024);
     var mineCount = Math.max(1, Math.min(total - 1, Number(board.getAttribute("data-mines")) || 10));
     var random = seededRandom(Number(board.getAttribute("data-seed")) + safeIndex);
     var mines = Object.create(null);
@@ -367,8 +367,10 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   function revealMineCell(node, board) {
     if (!board) return false;
     var index = Number(node.getAttribute("data-index"));
-    var rows = Number(board.getAttribute("data-rows")) || 9;
-    var columns = Number(board.getAttribute("data-columns")) || 9;
+    var boundedTotal = Math.min(board.children.length, 1024);
+    if (!Number.isInteger(index) || index < 0 || index >= boundedTotal) return false;
+    var rows = Math.min(32, Math.max(1, Number(board.getAttribute("data-rows")) || 9));
+    var columns = Math.min(32, Math.max(1, Number(board.getAttribute("data-columns")) || 9));
     var session = ensureMinesweeper(board, index);
     if (session.done || session.revealed[index]) return true;
     if (session.mines[index]) {
@@ -429,8 +431,8 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   function snakeSession(board) {
     var key = gameKey(board);
     if (gameState[key]) return gameState[key];
-    var rows = Number(board.getAttribute("data-rows")) || 14;
-    var columns = Number(board.getAttribute("data-columns")) || 20;
+    var rows = Math.min(32, Math.max(2, Number(board.getAttribute("data-rows")) || 14));
+    var columns = Math.min(32, Math.max(3, Number(board.getAttribute("data-columns")) || 20));
     var center = Math.floor(rows / 2) * columns + Math.floor(columns / 2);
     gameState[key] = { board: board, rows: rows, columns: columns, snake: [center, center - 1, center - 2], direction: "right", nextDirection: "right", food: center + 4, score: 0, timer: null, running: false };
     return gameState[key];
@@ -511,7 +513,8 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
         session.running = true;
         var status = gameStatus(board, "snake-status");
         if (status) status.textContent = "Running / 进行中";
-        session.timer = setInterval(function () { tickSnake(session); }, Number(board.getAttribute("data-speed")) || 140);
+        var speed = Math.min(1000, Math.max(50, Number(board.getAttribute("data-speed")) || 140));
+        session.timer = setInterval(function () { tickSnake(session); }, speed);
       }
       board.focus();
       return true;
@@ -525,17 +528,30 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     if (sudoku !== null) return sudoku;
     return runSnake(action, target, value);
   }
-  function initializeGames() {
-    var mine = root.querySelector('[data-engine="game.minesweeper"] .os-minesweeper');
+  function findGameNode(scope, selector) {
+    if (scope.matches && scope.matches(selector)) return scope;
+    return scope.querySelector(selector);
+  }
+  function initializeGamesWithin(scope) {
+    var mine = findGameNode(scope, ".os-minesweeper");
     if (mine) resetMinesweeper(mine);
-    var snake = root.querySelector('[data-engine="game.snake"] .os-snake');
+    var snake = findGameNode(scope, ".os-snake");
     if (snake) resetSnake(snake);
   }
-  function disposeGames() {
-    Object.keys(gameState).forEach(function (key) {
+  function disposeGamesWithin(scope) {
+    var boards = [];
+    if (scope.matches && scope.matches(".os-minesweeper, .os-snake")) boards.push(scope);
+    Array.prototype.forEach.call(scope.querySelectorAll ? scope.querySelectorAll(".os-minesweeper, .os-snake") : [], function (board) { boards.push(board); });
+    boards.forEach(function (board) {
+      var key = gameKey(board);
       var session = gameState[key];
       if (session && session.timer) clearInterval(session.timer);
+      delete gameState[key];
+      if (activeSnakeBoardId === board.id) activeSnakeBoardId = "";
     });
+  }
+  function disposeGames() {
+    disposeGamesWithin(root);
     gameState = Object.create(null);
     activeSnakeBoardId = "";
   }
@@ -648,7 +664,7 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     } else if (message.type === "openos:render") {
       disposeGames();
       root.innerHTML = sanitizeMarkup(message.markup);
-      initializeGames();
+      initializeGamesWithin(root);
       revision = Number(message.revision || 0);
       var renderedRequest = pending[message.requestId];
       if (renderedRequest) {
@@ -692,7 +708,9 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
         send("openos:patch-resync", { requestId: message.requestId });
         return;
       }
+      disposeGamesWithin(current);
       current.replaceWith(replacement);
+      initializeGamesWithin(replacement);
       revision = Number(patch.revision);
       delete pending[message.requestId];
       releasePatchRequest(message.requestId);

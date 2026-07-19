@@ -104,6 +104,22 @@ function setAttr(element: Element, name: string, value: string): void {
   else element.attrs.push({ name, value });
 }
 
+function gameConfigIssue(element: Element): string | null {
+  const engine = attr(element, "data-engine");
+  if (engine !== "game.minesweeper" && engine !== "game.snake") return null;
+  const rows = Number(attr(element, "data-rows"));
+  const columns = Number(attr(element, "data-columns"));
+  const minColumns = engine === "game.snake" ? 3 : 1;
+  if (!Number.isInteger(rows) || rows < 2 || rows > 32 || !Number.isInteger(columns) || columns < minColumns || columns > 32 || rows * columns > 1024) {
+    return `${engine} 的棋盘尺寸超出 2-32 行、${minColumns}-32 列和 1024 格限制。`;
+  }
+  if (engine === "game.snake") {
+    const speed = Number(attr(element, "data-speed"));
+    if (!Number.isFinite(speed) || speed < 50 || speed > 1_000) return "贪吃蛇速度必须在 50-1000ms 范围内。";
+  }
+  return null;
+}
+
 function removeNode(parent: ParentNode, node: ChildNode): void {
   void parent;
   defaultTreeAdapter.detachNode(node);
@@ -197,6 +213,8 @@ export function validateGenAppMarkup(raw: string): MarkupValidationIssue[] {
           excerpt: serializeOuter(node).slice(0, 180),
         });
       }
+      const gameIssue = gameConfigIssue(node);
+      if (gameIssue) issues.push({ severity: "fatal", code: "invalid_game_config", message: gameIssue });
       inspect(node);
     }
   };
@@ -359,6 +377,15 @@ export function sanitizeGenAppMarkup(
     }
   };
   clean(fragment);
+  const assertGameConfig = (parent: ParentNode): void => {
+    for (const node of childNodes(parent)) {
+      if (!isElement(node)) continue;
+      const issue = gameConfigIssue(node);
+      if (issue) throw genAppError("artifact_rejected", issue, 422, true);
+      assertGameConfig(node);
+    }
+  };
+  assertGameConfig(fragment);
 
   const rewriteReferencesAndCollectActions = (parent: ParentNode): void => {
     for (const node of childNodes(parent)) {

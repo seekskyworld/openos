@@ -45,11 +45,11 @@ export function clampMode(value: unknown): GenerationMode {
 export function clampAgentMaxRounds(value: unknown): number {
   const n = typeof value === "number" ? Math.round(value) : Number.NaN;
   if (!Number.isFinite(n)) return DEFAULT_GEN_APPS_SETTINGS.agentMaxRounds;
-  return Math.min(3, Math.max(1, n || DEFAULT_GEN_APPS_SETTINGS.agentMaxRounds));
+  return Math.min(3, Math.max(2, n || DEFAULT_GEN_APPS_SETTINGS.agentMaxRounds));
 }
 
 /**
- * agentic 总时长预算：按 1-3 轮伸缩，不再向产品设置暴露无限循环。
+ * agentic 总时长预算：按 2-3 轮伸缩，不再向产品设置暴露无限循环。
  * 流式后网关不再限时，单轮慢速上游（大制品 4-6 分钟）也应能跑完；
  * 断流卡死由 llm-core idle 超时（60s）负责，总预算只防失控循环。
  */
@@ -79,7 +79,7 @@ export function loadGenAppsSettings(env: ServerEnv): GenAppsPersistedSettings {
       creativity: clampCreativity(raw.creativity),
       appLanguage: clampLanguage(raw.appLanguage),
       // v1 的默认 agentic 会让升级后的首次点击继续走慢链；v2 起将 Instant 设为默认，
-      // v3 进一步移除无限精修轮次，显式 agentic 仍会保留但被限制在 1-3 轮。
+      // v3 进一步移除无限精修轮次，显式 agentic 仍会保留但被限制在 2-3 轮。
       generationMode: raw.version === 1 ? "fast" : clampMode(raw.generationMode),
       agentMaxRounds: clampAgentMaxRounds(raw.agentMaxRounds),
     };

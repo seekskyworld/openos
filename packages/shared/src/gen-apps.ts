@@ -372,7 +372,7 @@ export function parseGenAppsSettings(value: unknown): GenAppsSettings | null {
       : GEN_APP_DEFAULT_SETTINGS.creativity;
   const agentMaxRounds =
     typeof value.agentMaxRounds === "number" && Number.isFinite(value.agentMaxRounds)
-      ? Math.min(3, Math.max(1, Math.round(value.agentMaxRounds) || GEN_APP_DEFAULT_SETTINGS.agentMaxRounds))
+      ? Math.min(3, Math.max(2, Math.round(value.agentMaxRounds) || GEN_APP_DEFAULT_SETTINGS.agentMaxRounds))
       : GEN_APP_DEFAULT_SETTINGS.agentMaxRounds;
   return {
     suggestionCount: clampSuggestionCount(value.suggestionCount),

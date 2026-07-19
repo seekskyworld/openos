@@ -22,11 +22,11 @@ function minesweeperMarkup(recipe: GameRecipe): string {
   const cells = Array.from({ length: rows * columns }, (_, index) =>
     `<button id="mine-cell-${index}" class="os-game-cell" type="button" data-action="game.minesweeper.reveal" data-target="mine-board" data-index="${index}" aria-label="${zh ? "未揭开的方格" : "Hidden cell"}"></button>`,
   ).join("");
-  return `<main class="os-app os-column" data-engine="game.minesweeper">
+  return `<main class="os-app os-column">
     <header class="os-toolbar"><strong class="os-toolbar-title">${zh ? "扫雷" : "Minesweeper"}</strong><span id="mine-status" class="os-status">${zh ? "进行中" : "Ready"}</span></header>
     <section class="os-main os-column os-fill">
       <div class="os-row"><span class="os-badge">${zh ? "雷" : "Mines"}: <strong id="mine-count">${mines}</strong></span><span class="os-badge">${rows} × ${columns}</span><button id="mine-reset" class="os-button" type="button" data-action="game.minesweeper.reset" data-target="mine-board">${zh ? "重新开始" : "New game"}</button></div>
-      <div id="mine-board" class="os-game-grid os-minesweeper os-game-cols-${columns}" role="grid" data-rows="${rows}" data-columns="${columns}" data-mines="${mines}" data-seed="20260719">${cells}</div>
+      <div id="mine-board" class="os-game-grid os-minesweeper os-game-cols-${columns}" data-engine="game.minesweeper" role="grid" data-rows="${rows}" data-columns="${columns}" data-mines="${mines}" data-seed="20260719">${cells}</div>
     </section>
   </main>`;
 }
@@ -45,11 +45,11 @@ function sudokuMarkup(recipe: GameRecipe): string {
       ? `<input id="sudoku-cell-${index}" class="os-game-cell${boxClass}" type="text" value="" data-action="game.sudoku.input" data-index="${index}" data-solution="${SUDOKU_SOLUTION[index]}" aria-label="${zh ? `第 ${row + 1} 行第 ${column + 1} 列` : `Row ${row + 1}, column ${column + 1}`}">`
       : `<input id="sudoku-cell-${index}" class="os-game-cell os-game-given${boxClass}" type="text" value="${value}" disabled aria-label="${value}">`;
   }).join("");
-  return `<main class="os-app os-column" data-engine="game.sudoku">
+  return `<main class="os-app os-column">
     <header class="os-toolbar"><strong class="os-toolbar-title">${zh ? "数独" : "Sudoku"}</strong><span id="sudoku-status" class="os-status">${zh ? "填写空格" : "Fill the grid"}</span></header>
     <section class="os-main os-column os-fill">
       <div class="os-row"><span class="os-badge">9 × 9</span><button id="sudoku-reset" class="os-button" type="button" data-action="game.sudoku.reset" data-target="sudoku-board">${zh ? "重置" : "Reset"}</button></div>
-      <div id="sudoku-board" class="os-game-grid os-sudoku os-game-cols-9" role="grid" data-solution="${SUDOKU_SOLUTION}">${cells}</div>
+      <div id="sudoku-board" class="os-game-grid os-sudoku os-game-cols-9" data-engine="game.sudoku" role="grid" data-solution="${SUDOKU_SOLUTION}">${cells}</div>
     </section>
   </main>`;
 }
@@ -64,11 +64,11 @@ function snakeMarkup(recipe: GameRecipe): string {
   ).join("");
   const directionButton = (id: string, direction: string, label: string) =>
     `<button id="${id}" class="os-icon-button" type="button" data-action="game.snake.direction" data-target="snake-board" data-value="${direction}">${label}</button>`;
-  return `<main class="os-app os-column" data-engine="game.snake">
+  return `<main class="os-app os-column">
     <header class="os-toolbar"><strong class="os-toolbar-title">${zh ? "贪吃蛇" : "Snake"}</strong><span class="os-badge">${zh ? "得分" : "Score"}: <strong id="snake-score">0</strong></span><span id="snake-status" class="os-status">${zh ? "准备" : "Ready"}</span></header>
     <section class="os-main os-column os-fill">
       <div class="os-row"><button id="snake-start" class="os-button os-primary" type="button" data-action="game.snake.start" data-target="snake-board">${zh ? "开始" : "Start"}</button><button id="snake-pause" class="os-button" type="button" data-action="game.snake.pause" data-target="snake-board">${zh ? "暂停" : "Pause"}</button><button id="snake-reset" class="os-button" type="button" data-action="game.snake.reset" data-target="snake-board">${zh ? "重开" : "Reset"}</button></div>
-      <div id="snake-board" class="os-game-grid os-snake os-game-cols-${columns}" role="grid" tabindex="0" data-rows="${rows}" data-columns="${columns}" data-speed="${speedMs}">${cells}</div>
+      <div id="snake-board" class="os-game-grid os-snake os-game-cols-${columns}" data-engine="game.snake" role="grid" tabindex="0" data-rows="${rows}" data-columns="${columns}" data-speed="${speedMs}">${cells}</div>
       <div class="os-row os-game-controls">${directionButton("snake-up", "up", "↑")}${directionButton("snake-left", "left", "←")}${directionButton("snake-down", "down", "↓")}${directionButton("snake-right", "right", "→")}</div>
     </section>
   </main>`;
