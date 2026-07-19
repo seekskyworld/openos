@@ -10,9 +10,22 @@
 
 - **通用**：需要可组合的 UI、行为、能力和游戏引擎，而不是更多整页模板。
 - **随机**：需要可控的变体系统，随机布局、主题、功能组合和样例数据，而不是让模型每次自由生成全部代码。
-- **快速**：需要缓存结构、预载运行时、本地执行和小体积增量，让模型退出绝大多数热路径。
+- **快速**：需要缓存模型回复、预载运行时、本地执行模型生成的行为图和小体积增量，减少重复生成而不替模型决定应用。
 
 因此建议新建 Gen Apps Next，与现有 V2 并行开发，达到验收门槛后一次切流并删除旧链路。新架构的中心制品不再是 HTML，而是 `AppIR`。
+
+## 模型优先约束
+
+“全部按照模型回复”应定义为：模型是应用语义、文案、布局、功能和行为图的唯一来源；宿主不替模型决定业务结果，只负责安全校验、渲染、执行模型已经声明的行为，以及代理明确授权的能力。
+
+这不等于每次点击都重新调用模型。最优速度方案是：
+
+1. 候选列表由模型生成，但使用稳定的结构化输出、长前缀缓存和流式 JSON；先显示已到达的候选，数量不足再继续流。
+2. 点击后模型一次性生成完整 AppIR，包括组件、文案、数据初始值和行为图；先输出 `surface`，再输出 `data/behaviors`，收到 root 即可开窗。
+3. 已在行为图中声明的点击、输入、动画、计时和校验由宿主本地执行。这些执行结果仍然来自模型的行为定义，只是避免重复网络往返。
+4. 只有行为图没有覆盖的语义事件，才向同一模型 session 请求一个受限 `dataPatch` 或 `behaviorPatch`；patch 仍必须通过 schema、权限和 revision 校验。
+
+若强制“每一次状态变化都必须由模型现时决定”，就无法同时保证低延迟：每次交互至少增加一次网络 RTT 和模型生成时间。该模式可以作为 `model-turn` 兼容选项，但不应是默认路径。
 
 ## 最终架构
 
@@ -21,8 +34,8 @@
    |
    v
 Discovery Engine
-   |-- lexical/semantic intent retrieval
-   |-- diversity sampler
+   |-- cached model candidate stream
+   |-- seeded diversity request
    |-- candidate stream
    v
 AppCandidate(intent + variationSeed + capabilityProfile)
@@ -30,7 +43,7 @@ AppCandidate(intent + variationSeed + capabilityProfile)
    v
 App Composer
    |-- exact/semantic AppIR cache
-   |-- prefab composition
+   |-- model-selected prefab composition
    |-- constrained AI planner
    |-- sandbox bundle fallback
    v
@@ -115,28 +128,30 @@ type Transition = {
 
 模型只产受限场景、实体、规则参数和素材引用。引擎实现由宿主预载。
 
-## 3. Discovery Engine：候选既快又随机
+## 3. Discovery Engine：模型候选既快又随机
 
 当前候选目录应整体替换为两阶段候选流：
 
-### 即时批次
+### 缓存批次
 
-本地在 20ms 内返回 6 个候选：
+若相同语义和 seed 档位已有模型回复，本地在 20ms 内返回 6 个候选。缓存内容必须是模型曾经实际输出并通过校验的候选，不是宿主合成文案。
+
+### 冷启动批次
+
+未命中缓存时调用低延迟候选模型，并要求流式输出固定 6 个结构化候选：
 
 - 2 个精确意图候选；
 - 2 个能力不同的相邻候选；
 - 1 个风格化变体；
 - 1 个自定义生成候选。
 
-候选来自统一 Catalog metadata 和本地语义检索，不调用模型。
+Catalog 只作为模型可用能力上下文和校验依据，不直接替模型产生候选名称。第一个完整候选到达就显示，其余候选继续流入。
 
-### 可选增强批次
-
-仅当输入属于未知长尾时，并行调用快速规划模型产生 2-3 个补充候选；如果结果在 500ms 内到达且用户尚未点击，再以流式方式插入。即时批次永不等待它。
+“换一批”携带新的 seed 重新请求模型；旧列表保持可点击，直到新候选逐项到达，避免空白等待。
 
 ### 随机性模型
 
-每次搜索生成 `variationSeed`，控制：
+每次搜索生成 `variationSeed` 并作为模型输入，模型回复控制：
 
 - 候选排序与相邻能力采样；
 - 布局 recipe；
@@ -153,7 +168,7 @@ variation overlay      小体积，按 seed 变化
 runtime state          每窗口独立
 ```
 
-这样用户每次看到的结果可以不同，但昂贵的结构和引擎仍可命中缓存。提供“换一批”会改变 seed，不清除结构缓存。
+这样用户每次看到的结果可以不同，但昂贵的结构和引擎仍可命中缓存。提供“换一批”会改变 seed，不清除其他 seed 已缓存的模型回复。
 
 ## 4. App Composer：模型只规划，不写页面
 
@@ -170,12 +185,12 @@ validate candidate
    |
    +-- parallel: preload runtime/assets
    +-- parallel: lookup exact/semantic AppIR
-   +-- parallel: resolve prefab/capability coverage
+   +-- parallel: prepare prefab/capability context
    |
    v
 best route
    +-- cached AppIR
-   +-- prefab graph composition
+   +-- cached model-produced AppIR
    +-- constrained AI planning
    +-- sandbox bundle fallback
 ```
@@ -184,14 +199,14 @@ AI planner 使用严格结构化输出，只产生 1-4KB 的 AppIR 操作序列�
 
 ## 5. Prefab 与 Catalog
 
-Catalog 不存完整网页，而存四种可组合资产：
+Catalog 不存完整网页，也不自行决定生成结果，而是向模型提供四种可组合资产：
 
 - primitive：Button、Input、Table、Grid、Canvas；
 - pattern：搜索+结果、主从详情、看板、编辑器、设置页；
 - behavior：CRUD、筛选、排序、分页、拖拽、计时、撤销；
 - domain engine：游戏、图表、地图、媒体。
 
-Prefab 是一组已验证 AppIR 子图，例如：
+Prefab 是模型可以选择、填槽和组合的一组已验证 AppIR 子图，例如：
 
 ```text
 search-page = search-input + result-list + pagination + web.search
@@ -199,7 +214,7 @@ task-board  = toolbar + kanban + editor-modal + local-storage
 arcade-game = canvas + score-hud + pause-overlay + realtime-2d
 ```
 
-增加通用性时优先添加能被多类应用复用的 pattern/behavior，而不是添加一个应用模板。
+增加通用性时优先添加能被多类应用复用的 pattern/behavior，而不是添加一个应用模板。最终使用哪些 Prefab、如何组合、显示什么文案，仍由模型回复决定。
 
 ## 6. Capability Gateway
 
@@ -257,10 +272,10 @@ Controller 只解析协议和映射错误；安装目录只保存应用身份和
 
 | 场景 | P95 目标 |
 | --- | --- |
-| 即时候选 6 个 | < 20ms |
-| 换一批候选 | < 20ms |
-| 结构缓存/Prefab 命中开窗可用 | < 150ms |
-| 本地组合首次可交互 | < 300ms |
+| 候选模型回复缓存命中 | < 20ms |
+| 冷启动候选首项 | < 700ms，模型依赖 |
+| 冷启动候选完整 6 个 | < 1.5s，逐项流式显示 |
+| 模型 AppIR 缓存命中开窗可用 | < 150ms |
 | AI AppIR 首个 surface | < 1.0s |
 | AI AppIR 完整可用 | < 3.0s，取决于上游模型 |
 | 本地点击/输入反馈 | < 50ms，0 次模型调用 |
@@ -280,17 +295,17 @@ Controller 只解析协议和映射错误；安装目录只保存应用身份和
 
 - 定义 AppIR schema、canonical serializer、validator 和 content hash。
 - 实现 Declarative Runtime、data binding 和受限 patch。
-- 建立 20 个 primitives、10 个 patterns、10 个 behaviors。
+- 建立 20 个 primitives、10 个 patterns、10 个 behaviors，作为模型生成约束。
 
-退出条件：无模型生成一个表单、表格、搜索、看板应用；本地组合 P95 < 300ms。
+退出条件：模型生成的表单、表格、搜索、看板 AppIR 都能直接运行；缓存命中开窗 P95 < 150ms。
 
 ### Phase 2：Discovery 与随机层
 
-- 统一 Catalog metadata、语义检索和命名。
-- 实现即时批次、未知意图增强批次、variationSeed 与“换一批”。
+- 统一 Catalog metadata、候选结构化 prompt 和命名约束。
+- 实现候选回复缓存、冷启动流式批次、variationSeed 与“换一批”。
 - 删除旧 `SUGGESTION_FAMILIES` 独立文案逻辑。
 
-退出条件：候选 P95 < 20ms；同一输入多 seed 有明显差异且意图准确率不下降。
+退出条件：缓存候选 P95 < 20ms；冷启动首项 P95 < 700ms；同一输入多 seed 有明显差异且意图准确率不下降。
 
 ### Phase 3：Composer 与缓存
 
@@ -327,10 +342,10 @@ Controller 只解析协议和映射错误；安装目录只保存应用身份和
 必须同时满足：
 
 - 通用查询集可用率 >= 90%；
-- 常见应用模型调用率 <= 10%；
-- 常见交互模型调用率 <= 5%；
-- 即时候选 P95 < 20ms；
-- 缓存/Prefab 首次可交互 P95 < 300ms；
+- 所有候选和应用制品都可追溯到模型回复；
+- 已覆盖行为的常见交互模型调用率 <= 5%；
+- 候选缓存 P95 < 20ms，冷启动首项 P95 < 700ms；
+- AppIR 缓存首次可交互 P95 < 150ms；
 - 长尾首 surface P95 < 1s；
 - 生成结果跨 seed 的结构或功能差异可测，同时核心意图保持一致；
 - 非法 AppIR、越权 Capability、超预算 engine 全部拒绝；
