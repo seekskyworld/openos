@@ -1,5 +1,5 @@
 import { genAppError } from "./domain.js";
-import type { WebSearchResponse } from "./ports.js";
+import type { WebPageContent, WebSearchResponse } from "./ports.js";
 
 export type WebSearchRequest =
   | { kind: "landing"; engineName: string }
@@ -66,7 +66,8 @@ export function renderWebSearchResults(
         return `<article id="${escapeHtml(targetId)}-web-result-${index + 1}" class="os-card os-column">
           <div class="os-row"><strong>${escapeHtml(result.title)}</strong><span class="os-badge">${escapeHtml(hostname)}</span></div>
           <p class="os-caption">${escapeHtml(result.snippet || result.url)}</p>
-          <p class="os-status">${escapeHtml(result.url)}</p>
+          <div class="os-row"><p class="os-status">${escapeHtml(result.url)}</p>
+            <button id="${escapeHtml(targetId)}-web-open-${index + 1}" class="os-button" type="button" data-action="web.open" data-target="${escapeHtml(targetId)}" data-value="${escapeHtml(result.url)}">打开网页</button></div>
         </article>`;
       }).join("")
     : `<div class="os-empty"><p>没有找到相关网络结果</p></div>`;
@@ -74,4 +75,18 @@ export function renderWebSearchResults(
     <div class="os-row"><h2 class="os-subheading">${escapeHtml(response.query)}</h2><span class="os-badge">${escapeHtml(response.provider)} 网络结果</span></div>
     <div class="os-column" id="${escapeHtml(targetId)}-web-results-list">${resultMarkup}</div>
   </section>`;
+}
+
+export function renderWebPage(targetId: string, page: WebPageContent): string {
+  const hostname = new URL(page.url).hostname.replace(/^www\./, "");
+  const paragraphs = page.paragraphs.length > 0
+    ? page.paragraphs.map((paragraph, index) =>
+        `<p id="${escapeHtml(targetId)}-web-paragraph-${index + 1}">${escapeHtml(paragraph)}</p>`,
+      ).join("")
+    : `<div class="os-empty"><p>该网页没有可读取的正文内容</p></div>`;
+  return `<article id="${escapeHtml(targetId)}" class="os-column">
+    <header class="os-row"><div><h2 class="os-heading">${escapeHtml(page.title)}</h2><p class="os-status">${escapeHtml(page.url)}</p></div><span class="os-badge">${escapeHtml(hostname)}</span></header>
+    ${page.description ? `<p class="os-caption">${escapeHtml(page.description)}</p>` : ""}
+    <section id="${escapeHtml(targetId)}-web-content" class="os-card os-column">${paragraphs}</section>
+  </article>`;
 }

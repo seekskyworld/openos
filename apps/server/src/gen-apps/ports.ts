@@ -78,6 +78,18 @@ export interface WebSearchProvider {
   search(query: string, signal: AbortSignal): Promise<WebSearchResponse>;
 }
 
+export type WebPageContent = {
+  url: string;
+  title: string;
+  description: string;
+  paragraphs: string[];
+};
+
+/** 公网页面读取端口；实现必须校验协议、DNS/IP、重定向、类型和体积。 */
+export interface WebPageProvider {
+  open(url: string, signal: AbortSignal): Promise<WebPageContent>;
+}
+
 /** 兼容组合适配器；新编排代码依赖上面的最小能力端口。 */
 export interface GenAppGenerator
   extends SuggestionProvider,

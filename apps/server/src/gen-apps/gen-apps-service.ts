@@ -25,6 +25,7 @@ import type {
   GenAppGenerator,
   GenAppIdentity,
   GenAppRepository,
+  WebPageProvider,
   WebSearchProvider,
 } from "./ports.js";
 import { GenerationOrchestrator } from "./generation/generation-orchestrator.js";
@@ -46,6 +47,7 @@ type ServiceDeps = {
   repository: GenAppRepository;
   generation?: GenerationOrchestrator;
   webSearch?: WebSearchProvider;
+  webPage?: WebPageProvider;
   /** 测试可注入固定 now */
   now?: () => number;
   /** suggest count 缺省值提供者（读设置）；缺省用共享默认 */
@@ -109,6 +111,7 @@ export class GenAppsService {
       sessions: this.runtimeSessions,
       language: this.appLanguageFn,
       webSearch: deps.webSearch,
+      webPage: deps.webPage,
     });
   }
 

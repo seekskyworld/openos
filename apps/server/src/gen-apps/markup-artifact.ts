@@ -464,6 +464,7 @@ export type ResolvedMarkupInteraction = {
   patchTargetHtml: string;
   dataHref?: string;
   dataPrompt?: string;
+  dataValue?: string;
 };
 
 /**
@@ -489,6 +490,7 @@ export function resolveMarkupInteraction(
     patchTargetHtml: serializeOuter(patchTarget),
     dataHref: attr(actionElement, "data-href")?.trim() || undefined,
     dataPrompt: attr(actionElement, "data-prompt")?.trim() || undefined,
+    dataValue: attr(actionElement, "data-value")?.trim() || undefined,
   };
 }
 

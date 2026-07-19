@@ -54,6 +54,7 @@ import { DeterministicFakeGenerator } from "./gen-apps/infrastructure/determinis
 import { LlmGenAppGenerator } from "./gen-apps/infrastructure/llm-gen-app-generator.js";
 import { SqliteGenerationCache } from "./gen-apps/infrastructure/sqlite-generation-cache.js";
 import { BingRssWebSearchProvider } from "./gen-apps/infrastructure/bing-rss-web-search-provider.js";
+import { SafeWebPageProvider } from "./gen-apps/infrastructure/safe-web-page-provider.js";
 import { GenerationOrchestrator } from "./gen-apps/generation/generation-orchestrator.js";
 import {
   agenticBudgetMs,
@@ -129,6 +130,7 @@ export function startBridgeServer(options: CreateOptions = {}) {
       repository,
       generation,
       webSearch: new BingRssWebSearchProvider(),
+      webPage: new SafeWebPageProvider(),
       defaultSuggestionCount: () => loadGenAppsSettings(env).suggestionCount,
       // 总预算只防失控（卡死由 llm-core idle 超时负责）：
       // agentic 随轮次伸缩；fast 单发也给足慢速上游空间

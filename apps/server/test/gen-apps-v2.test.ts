@@ -37,7 +37,11 @@ import { LlmGenAppGenerator } from "../src/gen-apps/infrastructure/llm-gen-app-g
 import { GenerationOrchestrator } from "../src/gen-apps/generation/generation-orchestrator.js";
 import { InMemoryGenerationCache } from "../src/gen-apps/infrastructure/in-memory-generation-cache.js";
 import { BingRssWebSearchProvider } from "../src/gen-apps/infrastructure/bing-rss-web-search-provider.js";
-import type { WebSearchProvider } from "../src/gen-apps/ports.js";
+import {
+  extractReadableWebPage,
+  SafeWebPageProvider,
+} from "../src/gen-apps/infrastructure/safe-web-page-provider.js";
+import type { WebPageProvider, WebSearchProvider } from "../src/gen-apps/ports.js";
 import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight-generation.js";
 import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
 import { loadGenAppsSettings } from "../src/gen-apps/gen-app-settings.js";
@@ -641,6 +645,17 @@ test("web.search opens search-engine landings and injects real provider results 
     sessions,
     language: () => "en",
     webSearch,
+    webPage: {
+      async open(url) {
+        assert.equal(url, "https://example.com/openos");
+        return {
+          url,
+          title: "OpenOS Documentation",
+          description: "Official documentation",
+          paragraphs: ["OpenOS provides generated applications with a secure runtime."],
+        };
+      },
+    } satisfies WebPageProvider,
   });
   const landing = await coordinator.execute(
     {
@@ -674,6 +689,27 @@ test("web.search opens search-engine landings and injects real provider results 
   assert(results.ops[0].html.includes("Test Search 网络结果"));
   assert(results.ops[0].html.includes("OpenOS &lt;result&gt;"));
   assert(!results.ops[0].html.includes("<result>"));
+  assert(results.ops[0].html.includes('data-action="web.open"'));
+
+  const page = await coordinator.execute(
+    {
+      identity: sessions.read(runtimeSessionId, appId)!.identity,
+      request: {
+        runtimeSessionId,
+        baseRevision: 3,
+        event: {
+          type: "click",
+          targetId: "browser-results-web-open-1",
+          action: "web.open",
+          value: "http://127.0.0.1/private",
+        },
+      },
+    },
+    new AbortController().signal,
+  );
+  assert.equal(page.revision, 4);
+  assert(page.ops[0].html.includes("OpenOS Documentation"));
+  assert(page.ops[0].html.includes("secure runtime"));
 });
 
 test("Bing RSS search adapter parses bounded structured results", async () => {
@@ -688,6 +724,23 @@ test("Bing RSS search adapter parses bounded structured results", async () => {
     url: "https://example.com/openos",
     snippet: "Desktop result",
   }]);
+});
+
+test("web page reader extracts safe text and rejects private network targets", async () => {
+  const page = extractReadableWebPage(
+    '<html><head><title>Example</title><meta name="description" content="Readable page"></head><body><nav>Ignore navigation</nav><main><h1>Example heading</h1><p>This paragraph contains enough useful page text for the generated browser.</p><script>window.bad=true</script></main></body></html>',
+    "https://example.com/docs",
+  );
+  assert.equal(page.title, "Example");
+  assert.equal(page.description, "Readable page");
+  assert(page.paragraphs.some((paragraph) => paragraph.includes("useful page text")));
+  assert(!page.paragraphs.some((paragraph) => paragraph.includes("window.bad")));
+
+  const provider = new SafeWebPageProvider();
+  await assert.rejects(
+    provider.open("http://127.0.0.1/private", new AbortController().signal),
+    (error: Error & { code?: string }) => error.code === "web_page_failed",
+  );
 });
 
 test("service generates V2 drafts and applies one repaired, revisioned AI patch", async () => {

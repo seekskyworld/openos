@@ -37,14 +37,17 @@ fingerprint、成品缓存、本地 blueprint、Instant 单轮和显式 Agentic 
 - 正常交互只传单目标 patch 且每窗口串行；目标被本地动作移除时 iframe 请求一次全量 resync。服务端 revision 领先时用 409 权威快照对齐并明确提示重试，不把未执行动作误报成功；只有 session 不存在时 `/resume` 才接受宿主快照并重建会话。
 - 最近一次验收：真实候选 API 冷查询中位数 2.18ms、P95 28.41ms，浏览器 6 个候选 10.4ms 可见且零候选请求；deterministic fake 首块 2ms、完整生成 275ms、补丁 6ms、V2 线载荷相对编译 Shell 减少 82%，revision 恢复通过；制品生成的真实模型延迟仍由供应商决定，应继续按 P50/P95 观测。
 
-### 宿主网络搜索（`web.search`）
+### 宿主网络搜索与网页阅读（`web.search` / `web.open`）
 
 V2 新增声明式 `web.search` 动作。生成应用仍受 `connect-src 'none'` 约束，不能直接
 访问公网；ActionRuntime 只把元素 id 和输入值转发给宿主，服务端从权威 markup
 重新解析 `data-target/data-source`，再通过 `WebSearchProvider` 固定出口检索。
 
-当前生产适配器使用 Bing RSS，结果经过结构化 XML 解析、协议白名单和 HTML
-转义后，直接编译成目标区块的 revision patch，不经过 LLM。输入 Google、Bing 或
+当前搜索适配器使用 Bing RSS，结果经过结构化 XML 解析、协议白名单和 HTML
+转义后，直接编译成目标区块的 revision patch，不经过 LLM。每条结果提供
+`web.open` 业务按钮；网页读取器只允许标准 80/443 端口，解析并固定公开 DNS/IP，
+逐跳复验重定向，限制 HTML 类型、512KB 体积和 12 秒预算，最终只提取纯文本标题、
+描述和正文，不把远端 HTML/脚本送入 iframe。输入 Google、Bing 或
 DuckDuckGo 首页 URL 时先生成搜索入口；带 `q` 参数的搜索 URL 或普通关键词直接
 检索。任意其他 URL 不由服务端抓取，避免 SSRF。网络搜索沿用每应用运行时频控、
 窗口串行、取消和 revision 冲突保护，并在结果中明确标注真实提供方。

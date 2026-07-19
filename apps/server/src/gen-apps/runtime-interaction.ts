@@ -16,6 +16,7 @@ import {
 import type {
   GenAppGenerator,
   GenAppIdentity,
+  WebPageProvider,
   WebSearchProvider,
 } from "./ports.js";
 import {
@@ -29,6 +30,7 @@ import {
 } from "./runtime-session-store.js";
 import {
   renderSearchLanding,
+  renderWebPage,
   renderWebSearchResults,
   resolveWebSearchRequest,
 } from "./web-search.js";
@@ -45,6 +47,7 @@ type CoordinatorDeps = {
   sessions: RuntimeSessionStore;
   language: () => GenAppLanguage;
   webSearch?: WebSearchProvider;
+  webPage?: WebPageProvider;
 };
 
 /**
@@ -64,6 +67,9 @@ export class RuntimeInteractionCoordinator {
     const context = this.resolveContext(input.identity.id, input.request);
     if (context.declaredAction === "web.search") {
       return this.executeWebSearch(input.identity.id, input.request, context, externalSignal);
+    }
+    if (context.declaredAction === "web.open") {
+      return this.executeWebPage(input.identity.id, input.request, context, externalSignal);
     }
     const prompt = buildRuntimePatchPrompt({
       appName: input.identity.name,
@@ -160,7 +166,8 @@ export class RuntimeInteractionCoordinator {
     const isRemoteAction =
       declaredAction === "ai.generate" ||
       declaredAction === "ai.patch" ||
-      declaredAction === "web.search";
+      declaredAction === "web.search" ||
+      declaredAction === "web.open";
     if (!isRemoteAction && session.interactionMode !== "improv") {
       throw genAppError(
         "validation_failed",
@@ -204,6 +211,39 @@ export class RuntimeInteractionCoordinator {
     }
     const normalizedReplacement = compileReplacementMarkup(
       replacement,
+      context.resolved.patchTargetId,
+    );
+    const nextMarkup = replaceMarkupElement(
+      context.session.markup,
+      context.resolved.patchTargetId,
+      normalizedReplacement,
+    );
+    return this.compileAndCommit({
+      appId,
+      request,
+      targetId: context.resolved.patchTargetId,
+      nextMarkup,
+      normalizedReplacement,
+      turns: [],
+    });
+  }
+
+  private async executeWebPage(
+    appId: string,
+    request: GenAppInteractRequest,
+    context: InteractionContext,
+    signal: AbortSignal,
+  ): Promise<GenAppPatchBatch> {
+    const url = context.resolved.dataValue;
+    if (!url) {
+      throw genAppError("validation_failed", "Web page action is missing its URL.", 400);
+    }
+    if (!this.deps.webPage) {
+      throw genAppError("web_page_failed", "Web page provider is unavailable.", 503, true);
+    }
+    const page = await this.deps.webPage.open(url, signal);
+    const normalizedReplacement = compileReplacementMarkup(
+      renderWebPage(context.resolved.patchTargetId, page),
       context.resolved.patchTargetId,
     );
     const nextMarkup = replaceMarkupElement(
