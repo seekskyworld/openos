@@ -7,6 +7,8 @@ export const DOCK_H = 78;
 const STAGE_PAD = 8;
 /** 拖到 Dock 下方时至少露出标题栏高度，避免窗口完全丢失 */
 const MIN_VISIBLE_TITLE = 40;
+/** 左右越界时保留一段标题栏，确保窗口始终能被拖回。 */
+const MIN_VISIBLE_SIDE = 64;
 /** 抽屉最小化动画时长，需与 CSS --shelf-ms 一致 */
 export const MINIMIZE_ANIM_MS = 380;
 
@@ -34,11 +36,13 @@ function clampRect(rect: WindowRect, stage = stageBounds()): WindowRect {
   const w = Math.min(Math.max(rect.w, minW), Math.max(minW, stage.width - STAGE_PAD * 2));
   // 高度可接近整屏（含 Dock 区），最大化另算
   const h = Math.min(Math.max(rect.h, minH), Math.max(minH, stage.height - STAGE_PAD));
-  const maxX = Math.max(STAGE_PAD, stage.width - w - STAGE_PAD);
+  // 横向允许大部分窗口移出屏幕，但两侧都必须保留可拖回的标题栏区域。
+  const minX = Math.min(STAGE_PAD, MIN_VISIBLE_SIDE - w);
+  const maxX = Math.max(STAGE_PAD, stage.width - MIN_VISIBLE_SIDE);
   // 允许拖入 Dock 下方，但至少保留标题栏可见
   const maxY = Math.max(STAGE_PAD, stage.height - MIN_VISIBLE_TITLE);
   return {
-    x: Math.min(Math.max(STAGE_PAD, rect.x), maxX),
+    x: Math.min(Math.max(minX, rect.x), maxX),
     y: Math.min(Math.max(STAGE_PAD, rect.y), maxY),
     w,
     h,
