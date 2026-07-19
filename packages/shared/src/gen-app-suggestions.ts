@@ -44,6 +44,39 @@ function localized(
 
 const SUGGESTION_FAMILIES: readonly SuggestionFamily[] = [
   {
+    keywords: ["扫雷", "minesweeper", "mine sweeper"],
+    suggestions: [
+      localized("扫雷", "经典初级扫雷棋盘", "Minesweeper", "Classic beginner minesweeper", "💣", "blue"),
+      localized("高级扫雷", "16×16 高级扫雷挑战", "Expert Minesweeper", "A 16×16 minesweeper challenge", "🚩", "red"),
+      localized("极速扫雷", "快速开局的本地扫雷", "Quick Minesweeper", "Instant local minesweeper", "⚡", "orange"),
+      localized("每日扫雷", "每天一局经典扫雷", "Daily Minesweeper", "A classic daily minefield", "📅", "green"),
+      localized("极简扫雷", "专注棋盘的简洁扫雷", "Minimal Minesweeper", "A clean board-focused game", "◻️", "graphite"),
+      localized("扫雷训练", "练习数字推理与排雷", "Minesweeper Practice", "Practice deduction and clearing", "🧠", "purple"),
+    ],
+  },
+  {
+    keywords: ["数独", "sudoku"],
+    suggestions: [
+      localized("数独", "可校验的经典 9×9 数独", "Sudoku", "A validated classic 9×9 puzzle", "🔢", "blue"),
+      localized("每日数独", "每天完成一盘数独", "Daily Sudoku", "Complete one puzzle each day", "📅", "green"),
+      localized("数独训练", "即时标记错误数字", "Sudoku Practice", "Mark incorrect digits instantly", "🧠", "purple"),
+      localized("极简数独", "清爽专注的数独棋盘", "Minimal Sudoku", "A clean focused Sudoku board", "9️⃣", "graphite"),
+      localized("快速数独", "随开随玩的本地数独", "Quick Sudoku", "An instant local Sudoku game", "⚡", "orange"),
+      localized("经典数独", "固定题面与完成校验", "Classic Sudoku", "Fixed puzzle with completion checks", "✏️", "teal"),
+    ],
+  },
+  {
+    keywords: ["贪吃蛇", "snake", "snake game", "classic snake"],
+    suggestions: [
+      localized("贪吃蛇", "方向键控制的经典贪吃蛇", "Snake", "Classic keyboard-controlled Snake", "🐍", "green"),
+      localized("极速贪吃蛇", "更快节奏的本地挑战", "Fast Snake", "A faster local challenge", "⚡", "orange"),
+      localized("经典贪吃蛇", "可暂停与重开的网格游戏", "Classic Snake", "Grid gameplay with pause and reset", "🟩", "green"),
+      localized("迷你贪吃蛇", "短局轻量贪吃蛇", "Mini Snake", "Short lightweight Snake rounds", "🎮", "blue"),
+      localized("贪吃蛇训练", "练习方向与反应速度", "Snake Practice", "Practice direction and reactions", "🎯", "red"),
+      localized("极简贪吃蛇", "无干扰的纯粹玩法", "Minimal Snake", "Distraction-free classic play", "◼️", "graphite"),
+    ],
+  },
+  {
     keywords: ["浏览器", "网页", "上网", "搜索引擎", "browser", "web", "web search", "chrome", "google"],
     suggestions: [
       localized("浏览器", "快速浏览与搜索网页", "Web Browser", "Browse and search the web", "🌐", "blue"),

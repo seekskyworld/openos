@@ -95,6 +95,27 @@ button { color: inherit; }
 .os-progress { height: 4px; overflow: hidden; border-radius: 2px; background: rgba(120,120,128,.18); }
 .os-progress > span { display: block; width: var(--value, 0%); height: 100%; background: var(--os-accent); transition: width .2s ease; }
 .os-skeleton { border-radius: 5px; color: transparent !important; background: linear-gradient(90deg, rgba(120,120,128,.12), rgba(120,120,128,.22), rgba(120,120,128,.12)); background-size: 220% 100%; animation: os-shimmer 1.25s linear infinite; }
+.os-game-grid { display: grid; gap: 1px; width: min(100%, 520px); margin: 8px auto; overflow: hidden; border: 1px solid var(--os-border); border-radius: 6px; background: var(--os-border); }
+.os-game-cols-9 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.os-game-cols-16 { grid-template-columns: repeat(16, minmax(0, 1fr)); }
+.os-game-cols-20 { grid-template-columns: repeat(20, minmax(0, 1fr)); }
+.os-game-cell { min-width: 0; width: 100%; aspect-ratio: 1; display: grid; place-items: center; border: 0; border-radius: 0; padding: 0; color: var(--os-text); background: var(--os-surface-2); font-weight: 700; text-align: center; }
+button.os-game-cell { cursor: pointer; }
+button.os-game-cell:hover { background: color-mix(in srgb, var(--os-accent) 14%, var(--os-surface-2)); }
+.os-minesweeper .os-game-cell.is-revealed { background: var(--os-bg); cursor: default; }
+.os-minesweeper .os-game-cell.is-mine { color: #fff; background: var(--os-danger); }
+.os-sudoku { width: min(100%, 470px); gap: 1px; border: 2px solid var(--os-text); }
+.os-sudoku .os-game-cell { font-size: 16px; outline: none; }
+.os-sudoku .os-game-given { color: var(--os-text); background: var(--os-sidebar); opacity: 1; }
+.os-sudoku .os-game-cell.is-error { color: var(--os-danger); background: color-mix(in srgb, var(--os-danger) 12%, var(--os-surface-2)); }
+.os-sudoku .os-game-box-right { border-right: 2px solid var(--os-text); }
+.os-sudoku .os-game-box-bottom { border-bottom: 2px solid var(--os-text); }
+.os-snake { width: min(100%, 620px); aspect-ratio: 20 / 14; }
+.os-snake-cell { min-width: 0; background: var(--os-surface-2); }
+.os-snake-cell.is-snake { background: var(--os-accent); }
+.os-snake-cell.is-snake-head { background: var(--os-success); }
+.os-snake-cell.is-food { background: var(--os-danger); border-radius: 50%; transform: scale(.68); }
+.os-game-controls { justify-content: center; gap: 4px; }
 .is-busy { opacity: .66; pointer-events: none; }
 .is-hidden, [hidden] { display: none !important; }
 @keyframes os-shimmer { to { background-position: -220% 0; } }
@@ -119,6 +140,8 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   var revision = 0;
   var interactionMode = "hybrid";
   var state = Object.create(null);
+  var gameState = Object.create(null);
+  var activeSnakeBoardId = "";
   var pending = Object.create(null);
   var requestSeq = 0;
   var activePatchRequestId = "";
@@ -288,6 +311,234 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     target.textContent = expression || "0";
     return true;
   }
+  function gameKey(board) { return board ? "game:" + board.id : ""; }
+  function gameStatus(board, id) {
+    var app = board && board.closest(".os-app");
+    return app ? app.querySelector("#" + id) : null;
+  }
+  function seededRandom(seed) {
+    var value = Number(seed) || 1;
+    return function () {
+      value = (value * 1664525 + 1013904223) >>> 0;
+      return value / 4294967296;
+    };
+  }
+  function resetMinesweeper(board) {
+    if (!board) return false;
+    var key = gameKey(board);
+    gameState[key] = null;
+    Array.prototype.forEach.call(board.children, function (cell) {
+      cell.textContent = "";
+      cell.disabled = false;
+      cell.classList.remove("is-revealed", "is-mine");
+      cell.removeAttribute("data-mine");
+    });
+    var status = gameStatus(board, "mine-status");
+    if (status) status.textContent = "Ready / 准备";
+    return true;
+  }
+  function ensureMinesweeper(board, safeIndex) {
+    var key = gameKey(board);
+    if (gameState[key]) return gameState[key];
+    var total = board.children.length;
+    var mineCount = Math.max(1, Math.min(total - 1, Number(board.getAttribute("data-mines")) || 10));
+    var random = seededRandom(Number(board.getAttribute("data-seed")) + safeIndex);
+    var mines = Object.create(null);
+    while (Object.keys(mines).length < mineCount) {
+      var candidate = Math.floor(random() * total);
+      if (candidate !== safeIndex) mines[candidate] = 1;
+    }
+    var session = { mines: mines, revealed: Object.create(null), mineCount: mineCount, done: false };
+    gameState[key] = session;
+    return session;
+  }
+  function mineNeighbors(index, rows, columns) {
+    var output = [];
+    var row = Math.floor(index / columns);
+    var column = index % columns;
+    for (var dr = -1; dr <= 1; dr++) for (var dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      var nextRow = row + dr;
+      var nextColumn = column + dc;
+      if (nextRow >= 0 && nextRow < rows && nextColumn >= 0 && nextColumn < columns) output.push(nextRow * columns + nextColumn);
+    }
+    return output;
+  }
+  function revealMineCell(node, board) {
+    if (!board) return false;
+    var index = Number(node.getAttribute("data-index"));
+    var rows = Number(board.getAttribute("data-rows")) || 9;
+    var columns = Number(board.getAttribute("data-columns")) || 9;
+    var session = ensureMinesweeper(board, index);
+    if (session.done || session.revealed[index]) return true;
+    if (session.mines[index]) {
+      session.done = true;
+      Array.prototype.forEach.call(board.children, function (cell, cellIndex) {
+        if (session.mines[cellIndex]) { cell.textContent = "✹"; cell.classList.add("is-mine"); }
+        cell.disabled = true;
+      });
+      var lost = gameStatus(board, "mine-status");
+      if (lost) lost.textContent = "Game over / 踩雷";
+      return true;
+    }
+    var queue = [index];
+    while (queue.length) {
+      var current = queue.shift();
+      if (session.revealed[current] || session.mines[current]) continue;
+      session.revealed[current] = 1;
+      var cell = board.children[current];
+      if (!cell) continue;
+      var neighbors = mineNeighbors(current, rows, columns);
+      var nearby = neighbors.filter(function (next) { return Boolean(session.mines[next]); }).length;
+      cell.textContent = nearby ? String(nearby) : "";
+      cell.disabled = true;
+      cell.classList.add("is-revealed");
+      if (!nearby) neighbors.forEach(function (next) { if (!session.revealed[next]) queue.push(next); });
+    }
+    if (Object.keys(session.revealed).length === board.children.length - session.mineCount) {
+      session.done = true;
+      var won = gameStatus(board, "mine-status");
+      if (won) won.textContent = "You win / 胜利";
+    }
+    return true;
+  }
+  function runSudoku(action, node, board) {
+    if (action === "game.sudoku.reset") {
+      if (!board) return false;
+      Array.prototype.forEach.call(board.querySelectorAll('[data-action="game.sudoku.input"]'), function (cell) {
+        cell.value = "";
+        cell.classList.remove("is-error");
+      });
+      var resetStatus = gameStatus(board, "sudoku-status");
+      if (resetStatus) resetStatus.textContent = "Fill the grid / 填写空格";
+      return true;
+    }
+    if (action !== "game.sudoku.input") return null;
+    var value = String(node.value || "").replace(/[^1-9]/g, "").slice(-1);
+    node.value = value;
+    node.classList.toggle("is-error", Boolean(value) && value !== node.getAttribute("data-solution"));
+    var app = node.closest(".os-app");
+    var editable = app ? app.querySelectorAll('[data-action="game.sudoku.input"]') : [];
+    var solved = editable.length > 0 && Array.prototype.every.call(editable, function (cell) {
+      return cell.value === cell.getAttribute("data-solution");
+    });
+    var status = board ? gameStatus(board, "sudoku-status") : null;
+    if (status) status.textContent = solved ? "Solved / 完成" : "Fill the grid / 填写空格";
+    return true;
+  }
+  function snakeSession(board) {
+    var key = gameKey(board);
+    if (gameState[key]) return gameState[key];
+    var rows = Number(board.getAttribute("data-rows")) || 14;
+    var columns = Number(board.getAttribute("data-columns")) || 20;
+    var center = Math.floor(rows / 2) * columns + Math.floor(columns / 2);
+    gameState[key] = { board: board, rows: rows, columns: columns, snake: [center, center - 1, center - 2], direction: "right", nextDirection: "right", food: center + 4, score: 0, timer: null, running: false };
+    return gameState[key];
+  }
+  function renderSnake(session) {
+    Array.prototype.forEach.call(session.board.children, function (cell) { cell.classList.remove("is-snake", "is-snake-head", "is-food"); });
+    session.snake.forEach(function (index, part) {
+      var cell = session.board.children[index];
+      if (cell) cell.classList.add("is-snake", part === 0 ? "is-snake-head" : "is-snake");
+    });
+    var food = session.board.children[session.food];
+    if (food) food.classList.add("is-food");
+    var score = gameStatus(session.board, "snake-score");
+    if (score) score.textContent = String(session.score);
+  }
+  function stopSnake(session, message) {
+    if (session.timer) clearInterval(session.timer);
+    session.timer = null;
+    session.running = false;
+    var status = gameStatus(session.board, "snake-status");
+    if (status) status.textContent = message;
+  }
+  function placeSnakeFood(session) {
+    var free = [];
+    for (var index = 0; index < session.rows * session.columns; index++) if (session.snake.indexOf(index) === -1) free.push(index);
+    session.food = free.length ? free[Math.floor(Math.random() * free.length)] : -1;
+  }
+  function tickSnake(session) {
+    var opposite = { up: "down", down: "up", left: "right", right: "left" };
+    if (opposite[session.direction] !== session.nextDirection) session.direction = session.nextDirection;
+    var head = session.snake[0];
+    var row = Math.floor(head / session.columns);
+    var column = head % session.columns;
+    if (session.direction === "up") row--;
+    else if (session.direction === "down") row++;
+    else if (session.direction === "left") column--;
+    else column++;
+    if (row < 0 || row >= session.rows || column < 0 || column >= session.columns) { stopSnake(session, "Game over / 结束"); return; }
+    var next = row * session.columns + column;
+    var grows = next === session.food;
+    var body = grows ? session.snake : session.snake.slice(0, -1);
+    if (body.indexOf(next) !== -1) { stopSnake(session, "Game over / 结束"); return; }
+    session.snake.unshift(next);
+    if (grows) { session.score++; placeSnakeFood(session); }
+    else session.snake.pop();
+    renderSnake(session);
+  }
+  function resetSnake(board) {
+    if (!board) return false;
+    var key = gameKey(board);
+    var previous = gameState[key];
+    if (previous && previous.timer) clearInterval(previous.timer);
+    gameState[key] = null;
+    var session = snakeSession(board);
+    activeSnakeBoardId = board.id;
+    renderSnake(session);
+    stopSnake(session, "Ready / 准备");
+    return true;
+  }
+  function setSnakeDirection(board, value) {
+    if (!board) return false;
+    var session = snakeSession(board);
+    if ({ up: 1, down: 1, left: 1, right: 1 }[value]) session.nextDirection = value;
+    activeSnakeBoardId = board.id;
+    board.focus();
+    return true;
+  }
+  function runSnake(action, board, value) {
+    if (action.indexOf("game.snake.") !== 0) return null;
+    if (action === "game.snake.reset") return resetSnake(board);
+    if (!board) return false;
+    var session = snakeSession(board);
+    activeSnakeBoardId = board.id;
+    if (action === "game.snake.direction") return setSnakeDirection(board, value);
+    if (action === "game.snake.pause") { stopSnake(session, "Paused / 暂停"); return true; }
+    if (action === "game.snake.start") {
+      if (!session.running) {
+        session.running = true;
+        var status = gameStatus(board, "snake-status");
+        if (status) status.textContent = "Running / 进行中";
+        session.timer = setInterval(function () { tickSnake(session); }, Number(board.getAttribute("data-speed")) || 140);
+      }
+      board.focus();
+      return true;
+    }
+    return false;
+  }
+  function runGameAction(action, node, target, value) {
+    if (action === "game.minesweeper.reset") return resetMinesweeper(target);
+    if (action === "game.minesweeper.reveal") return revealMineCell(node, target);
+    var sudoku = runSudoku(action, node, target || node.closest(".os-sudoku"));
+    if (sudoku !== null) return sudoku;
+    return runSnake(action, target, value);
+  }
+  function initializeGames() {
+    var mine = root.querySelector('[data-engine="game.minesweeper"] .os-minesweeper');
+    if (mine) resetMinesweeper(mine);
+    var snake = root.querySelector('[data-engine="game.snake"] .os-snake');
+    if (snake) resetSnake(snake);
+  }
+  function disposeGames() {
+    Object.keys(gameState).forEach(function (key) {
+      var session = gameState[key];
+      if (session && session.timer) clearInterval(session.timer);
+    });
+    gameState = Object.create(null);
+    activeSnakeBoardId = "";
+  }
   function runLocal(action, node) {
     var target = targetFor(node);
     var value = node.getAttribute("data-value") || valueFor(sourceFor(node)) || valueFor(node);
@@ -328,6 +579,8 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     }
     var calculatorResult = runCalculatorAction(action, target, value);
     if (calculatorResult !== null) return calculatorResult;
+    var gameResult = runGameAction(action, node, target, value);
+    if (gameResult !== null) return gameResult;
     if (action === "state.set") {
       var key = node.getAttribute("data-key") || node.id;
       state[key] = value;
@@ -369,7 +622,7 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
     if (action === "ai.generate" || action === "ai.patch" || action === "web.search" || action === "web.open") {
       if (event.type !== "input" || target.getAttribute("data-trigger") === "input") requestAi(target, event, action);
     }
-    else if (event.type !== "click" && action !== "filter" && action !== "state.set") {
+    else if (event.type !== "click" && action !== "filter" && action !== "state.set" && action !== "game.sudoku.input") {
       if (interactionMode === "improv") requestAi(target, event, action || "ai.patch");
     }
     else if (!runLocal(action, target) && interactionMode === "improv") requestAi(target, event, action || "ai.patch");
@@ -377,6 +630,14 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
   document.addEventListener("click", onAction);
   document.addEventListener("input", onAction);
   document.addEventListener("change", onAction);
+  document.addEventListener("keydown", function (event) {
+    if (!activeSnakeBoardId || asInput(event.target)) return;
+    var directions = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
+    var direction = directions[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    setSnakeDirection(byId(activeSnakeBoardId), direction);
+  });
 
   window.addEventListener("message", function (event) {
     var message = event.data || {};
@@ -385,7 +646,9 @@ export const GEN_APP_ACTION_RUNTIME = String.raw`
       revision = Number(message.revision || 0);
       interactionMode = message.interactionMode === "improv" ? "improv" : "hybrid";
     } else if (message.type === "openos:render") {
+      disposeGames();
       root.innerHTML = sanitizeMarkup(message.markup);
+      initializeGames();
       revision = Number(message.revision || 0);
       var renderedRequest = pending[message.requestId];
       if (renderedRequest) {

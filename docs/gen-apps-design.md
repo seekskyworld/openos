@@ -16,6 +16,7 @@ query + suggestion + settings
 fingerprint（prompt / policy / UI Kit / runtime 版本）
         |
         +--> 成品缓存命中 ----> 重新创建 draft/session/revision（不共享运行态）
+        +--> AppRecipe 命中 --> EngineRegistry 组装可信本地引擎 -> 缓存 -> draft
         +--> 本地 blueprint 命中 -> 编译 -> 缓存 -> draft
         +--> 相同 fingerprint 在途 -> join 同一模型调用
         +--> Instant 单轮模型 -> 编译 -> 缓存 -> draft
@@ -26,12 +27,13 @@ fingerprint（prompt / policy / UI Kit / runtime 版本）
 
 - `SuggestionProvider` 只负责确定性候选策略，候选首屏不调用 LLM。
 - `ArtifactGenerator`、`FragmentGenerator` 与 `GenerationCache` 是独立端口，便于替换模型、缓存或测试 fake。
+- `AppRecipe` 只描述 engine/version/language/config；`EngineRegistry` 为扫雷、数独、贪吃蛇组装受信任标记，游戏规则、状态、键盘和动画由预载 Runtime 执行，任何生成模式都不调用模型。
 - blueprint 只存语义模板和受信任 markup，不绕过编译器；编译失败时 Instant 使用本地 generic fallback。
 - 成品缓存与 draft/installed 生命周期分离；命中缓存仍创建新的草稿、运行会话和 revision，避免窗口状态串线。
 - 缓存 fingerprint 包含供应商/协议/端点/模型、策略版本、blueprint/UI Kit/runtime 版本和 creativity tier，切换模型或升级任一版本会自然失效；SQLite 按 TTL、大小和 LRU 淘汰，且不记录 API Key。
 - 同一 fingerprint 的并发请求共享底层模型调用，订阅者各自接收流式 delta；最后一个订阅者取消才中止底层任务。
 
-默认 `generationMode` 为 `fast`（兼容内部称呼 Instant）；`agentic` 仅在用户显式选择精修模式时启用。这样常见工具优先走本地 blueprint，未知需求走单轮 Instant，只有需要修复循环的场景才支付多轮延迟。
+默认 `generationMode` 为 `fast`（兼容内部称呼 Instant）；`agentic` 仅在用户显式选择精修模式时启用且限制为 1-3 轮。游戏优先走 recipe/engine，常见工具走本地 blueprint，未知需求走单轮 Instant，只有可由声明式标记修复的场景才支付有限多轮延迟。
 
 ## Hybrid Generative Runtime V2（已实施）
 

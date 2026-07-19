@@ -22,9 +22,13 @@ import type {
   SuggestionProvider,
   GeneratePortInput,
 } from "../ports.js";
-import { createGenerationFingerprint } from "./fingerprint.js";
+import {
+  createGenerationFingerprint,
+  createRecipeFingerprint,
+} from "./fingerprint.js";
 import { InFlightGenerationRegistry } from "./in-flight-generation.js";
 import { createFallbackBlueprint, resolveBlueprint } from "./blueprint-registry.js";
+import { resolveAppRecipe } from "./app-recipe.js";
 
 type GenerationProfile = "instant" | "agentic";
 
@@ -161,14 +165,23 @@ export class GenerationOrchestrator {
     }
 
     const settings = this.deps.settings();
-    const fingerprint = createGenerationFingerprint({
+    const recipe = resolveAppRecipe({
       query,
-      suggestion: input.suggestion,
+      name: input.suggestion.name,
+      description: input.suggestion.description,
       language: settings.language,
       creativity: settings.creativity,
-      profile: settings.profile,
-      generatorKey: settings.generatorKey,
     });
+    const fingerprint = recipe
+      ? createRecipeFingerprint(recipe.cacheKey)
+      : createGenerationFingerprint({
+          query,
+          suggestion: input.suggestion,
+          language: settings.language,
+          creativity: settings.creativity,
+          profile: settings.profile,
+          generatorKey: settings.generatorKey,
+        });
     const now = this.nowFn();
     const startedAt = performance.now();
 
@@ -183,6 +196,18 @@ export class GenerationOrchestrator {
           this.deps.cache.delete(fingerprint);
         }
       }
+    }
+
+    if (recipe) {
+      hooks.onPhase?.({ phase: "recipe-hit" });
+      const result = this.compileAndCache(
+        fingerprint,
+        recipe.artifact,
+        recipe.engine,
+        now,
+      );
+      this.logMetric("recipe_hit", fingerprint, performance.now() - startedAt);
+      return this.createDraft(key, query, input.suggestion, result);
     }
 
     if (settings.profile === "instant" && !input.bypassCache) {
@@ -333,7 +358,7 @@ export class GenerationOrchestrator {
   }
 
   private logMetric(
-    outcome: "artifact_hit" | "blueprint_hit" | "inflight_join" | "miss",
+    outcome: "artifact_hit" | "recipe_hit" | "blueprint_hit" | "inflight_join" | "miss",
     fingerprint: string,
     durationMs: number,
   ): void {

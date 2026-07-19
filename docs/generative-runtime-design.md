@@ -37,6 +37,14 @@ fingerprint、成品缓存、本地 blueprint、Instant 单轮和显式 Agentic 
 - 正常交互只传单目标 patch 且每窗口串行；目标被本地动作移除时 iframe 请求一次全量 resync。服务端 revision 领先时用 409 权威快照对齐并明确提示重试，不把未执行动作误报成功；只有 session 不存在时 `/resume` 才接受宿主快照并重建会话。
 - 最近一次验收：真实候选 API 冷查询中位数 2.18ms、P95 28.41ms，浏览器 6 个候选 10.4ms 可见且零候选请求；deterministic fake 首块 2ms、完整生成 275ms、补丁 6ms、V2 线载荷相对编译 Shell 减少 82%，revision 恢复通过；制品生成的真实模型延迟仍由供应商决定，应继续按 P50/P95 观测。
 
+### 可信游戏引擎
+
+`AppRecipe -> EngineRegistry` 当前提供 `game.minesweeper`、`game.sudoku` 和
+`game.snake`。模型只参与候选文案；选中后由本地 recipe 直接组装声明式棋盘。
+ActionRuntime 负责扫雷布雷/扩散/胜负、数独输入校验/完成状态，以及贪吃蛇方向键、
+定时 tick、食物、碰撞、计分、暂停和重开。游戏不使用模型 patch，不允许任意脚本
+或 canvas，动画使用预载可信网格运行时，因此生成毫秒级、交互本地 0ms。
+
 ### 宿主网络搜索与网页阅读（`web.search` / `web.open`）
 
 V2 新增声明式 `web.search` 动作。生成应用仍受 `connect-src 'none'` 约束，不能直接

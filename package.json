@@ -26,6 +26,8 @@
     "smoke:genapps-v2": "node scripts/smoke-gen-apps-v2.mjs",
     "presmoke:genapps-runtime": "npm run build -w @openos/shared",
     "smoke:genapps-runtime": "node scripts/smoke-gen-app-runtime.mjs",
+    "presmoke:genapps-games": "npm run build -w @openos/shared",
+    "smoke:genapps-games": "node scripts/smoke-gen-app-games.mjs",
     "typecheck": "npm run typecheck -w @openos/shared && npm run typecheck -w @openos/server && npm run typecheck -w @openos/web && npm run typecheck -w @openos/desktop"
   },
   "engines": {

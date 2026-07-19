@@ -277,11 +277,11 @@ export const zhCN: Record<string, string> = {
   "genapps.mode": "生成模式",
   "genapps.mode.fast": "快速",
   "genapps.mode.agentic": "精修",
-  "genapps.mode.hint": "快速≈30-60s 单发；精修会本地校验并自动修复，约 1-3 分钟更可靠",
+  "genapps.mode.hint": "快速优先使用缓存、应用配方和本地引擎；精修仅用于未知应用的有限修复",
   "genapps.rounds": "精修轮次",
   "genapps.streaming.generating": "正在生成",
   "genapps.streaming.checking": "正在校验",
   "genapps.streaming.fixing": "正在修复",
   "genapps.rounds.hint":
-    "含首轮生成，最多 10 轮；拖到 0 = 无限——模型认为已完成即可提前结束，总时长 10 分钟兜底",
+    "含首轮生成，最多 3 轮；游戏和常见工具始终优先使用本地引擎，不进入精修循环",
 };

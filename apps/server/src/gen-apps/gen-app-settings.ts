@@ -26,12 +26,12 @@ export type { GenAppLanguage };
 export type GenerationMode = GenAppGenerationMode;
 
 export type GenAppsPersistedSettings = GenAppsSettings & {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
 };
 
 export const DEFAULT_GEN_APPS_SETTINGS: GenAppsPersistedSettings = {
   ...GEN_APP_DEFAULT_SETTINGS,
-  version: 2,
+  version: 3,
 };
 
 export function clampLanguage(value: unknown): GenAppLanguage {
@@ -45,18 +45,16 @@ export function clampMode(value: unknown): GenerationMode {
 export function clampAgentMaxRounds(value: unknown): number {
   const n = typeof value === "number" ? Math.round(value) : Number.NaN;
   if (!Number.isFinite(n)) return DEFAULT_GEN_APPS_SETTINGS.agentMaxRounds;
-  if (n <= 0) return 0; // 0 = 无限
-  return Math.min(10, Math.max(1, n));
+  return Math.min(3, Math.max(1, n || DEFAULT_GEN_APPS_SETTINGS.agentMaxRounds));
 }
 
 /**
- * agentic 总时长预算：按轮次伸缩；无限模式 15 分钟兜底。
+ * agentic 总时长预算：按 1-3 轮伸缩，不再向产品设置暴露无限循环。
  * 流式后网关不再限时，单轮慢速上游（大制品 4-6 分钟）也应能跑完；
  * 断流卡死由 llm-core idle 超时（60s）负责，总预算只防失控循环。
  */
 export function agenticBudgetMs(agentMaxRounds: number): number {
-  if (agentMaxRounds === 0) return 1_500_000;
-  return Math.min(1_500_000, 720_000 + Math.max(0, agentMaxRounds - 3) * 120_000);
+  return Math.min(900_000, 420_000 + clampAgentMaxRounds(agentMaxRounds) * 120_000);
 }
 
 export type CreativityTier = FastSuggestionStyle;
@@ -76,12 +74,12 @@ export function loadGenAppsSettings(env: ServerEnv): GenAppsPersistedSettings {
     if (!existsSync(path)) return { ...DEFAULT_GEN_APPS_SETTINGS };
     const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<GenAppsPersistedSettings>;
     return {
-      version: 2,
+      version: 3,
       suggestionCount: clampSuggestionCount(raw.suggestionCount),
       creativity: clampCreativity(raw.creativity),
       appLanguage: clampLanguage(raw.appLanguage),
-      // v1 的默认 agentic 会让升级后的首次点击继续走慢链；v2 将 Instant 设为默认，
-      // 用户在新设置页显式选择 agentic 后会以 v2 持久化，不再被迁移覆盖。
+      // v1 的默认 agentic 会让升级后的首次点击继续走慢链；v2 起将 Instant 设为默认，
+      // v3 进一步移除无限精修轮次，显式 agentic 仍会保留但被限制在 1-3 轮。
       generationMode: raw.version === 1 ? "fast" : clampMode(raw.generationMode),
       agentMaxRounds: clampAgentMaxRounds(raw.agentMaxRounds),
     };
@@ -105,7 +103,7 @@ export function saveGenAppsSettings(
 ): GenAppsPersistedSettings {
   const current = loadGenAppsSettings(env);
   const next: GenAppsPersistedSettings = {
-    version: 2,
+    version: 3,
     suggestionCount:
       update.suggestionCount !== undefined
         ? clampSuggestionCount(update.suggestionCount)

@@ -32,7 +32,8 @@
 
 ### 🪄 Gen Apps：搜索即生成应用
 - 启动台输入关键词 → 浏览器按已加载设置同步生成完整候选；Bridge API 为其他调用方复用同一策略（均不等待模型）
-- 点击候选 → **Cache-first Instant 生成**：成品缓存 → 本地 blueprint → 单轮 Instant；仅显式精修模式进入 Coding Agent 多轮校验/修复
+- 点击候选 → **Cache-first Instant 生成**：成品缓存 → AppRecipe/本地引擎 → blueprint → 单轮 Instant；仅显式精修模式进入最多 3 轮校验/修复
+- 扫雷、数独、贪吃蛇命中 `AppRecipe + EngineRegistry`，毫秒组装并由可信本地规则/动画引擎运行，不调用模型
 - 生成的应用运行在 CSP + sandbox iframe 中（无网络、无宿主访问）；关闭即安装进启动台，二次打开直接读库、不再调模型
 - 搜索框可通过声明式 `web.search` 注入真实网络结果并用 `web.open` 打开正文；iframe 仍无公网权限，服务端固定搜索出口并安全提取网页纯文本
 - 生成偏好滑杆四档：系统工具 → 商店应用 → 独立开发 → 天马行空（同时映射提示词风格与采样温度）

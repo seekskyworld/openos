@@ -49,3 +49,14 @@ export function createGenerationFingerprint(input: GenerationFingerprintInput): 
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
+
+export function createRecipeFingerprint(recipeCacheKey: string): string {
+  return createHash("sha256").update(JSON.stringify({
+    recipeCacheKey,
+    formatVersion: GEN_APP_FORMAT_VERSION,
+    policyVersion: GEN_APP_POLICY_VERSION,
+    runtimeVersion: GEN_APP_RUNTIME_VERSION,
+    uiKitVersion: GEN_APP_UI_KIT_VERSION,
+    blueprintVersion: GEN_APP_BLUEPRINT_VERSION,
+  })).digest("hex");
+}

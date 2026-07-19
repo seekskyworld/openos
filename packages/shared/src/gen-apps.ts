@@ -11,7 +11,7 @@ export const GEN_APP_FORMAT = "openos-markup";
 export const GEN_APP_FORMATS = [GEN_APP_LEGACY_FORMAT, GEN_APP_FORMAT] as const;
 export type GenAppArtifactFormat = (typeof GEN_APP_FORMATS)[number];
 export const GEN_APP_FORMAT_VERSION = 2;
-export const GEN_APP_RUNTIME_VERSION = 4;
+export const GEN_APP_RUNTIME_VERSION = 5;
 export const GEN_APP_POLICY_VERSION = 2;
 export const GEN_APP_PROMPT_VERSION = 2;
 export const GEN_APP_UI_KIT_VERSION = 1;
@@ -89,6 +89,14 @@ export const GEN_APP_LOCAL_ACTIONS = [
   "toast",
   "web.search",
   "web.open",
+  "game.minesweeper.reveal",
+  "game.minesweeper.reset",
+  "game.sudoku.input",
+  "game.sudoku.reset",
+  "game.snake.start",
+  "game.snake.pause",
+  "game.snake.reset",
+  "game.snake.direction",
   "ai.generate",
   "ai.patch",
 ] as const;
@@ -364,7 +372,7 @@ export function parseGenAppsSettings(value: unknown): GenAppsSettings | null {
       : GEN_APP_DEFAULT_SETTINGS.creativity;
   const agentMaxRounds =
     typeof value.agentMaxRounds === "number" && Number.isFinite(value.agentMaxRounds)
-      ? Math.min(10, Math.max(0, Math.round(value.agentMaxRounds)))
+      ? Math.min(3, Math.max(1, Math.round(value.agentMaxRounds) || GEN_APP_DEFAULT_SETTINGS.agentMaxRounds))
       : GEN_APP_DEFAULT_SETTINGS.agentMaxRounds;
   return {
     suggestionCount: clampSuggestionCount(value.suggestionCount),

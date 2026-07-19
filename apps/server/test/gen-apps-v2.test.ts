@@ -44,7 +44,11 @@ import {
 import type { WebPageProvider, WebSearchProvider } from "../src/gen-apps/ports.js";
 import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight-generation.js";
 import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
-import { loadGenAppsSettings } from "../src/gen-apps/gen-app-settings.js";
+import { resolveAppRecipe } from "../src/gen-apps/generation/app-recipe.js";
+import {
+  clampAgentMaxRounds,
+  loadGenAppsSettings,
+} from "../src/gen-apps/gen-app-settings.js";
 
 const context = () => ({
   requestId: "test-request",
@@ -141,6 +145,9 @@ test("fast suggestion policy keeps language, style, and intent deterministic", (
       .name,
     "Kanban board",
   );
+  assert.equal(createFastGenAppSuggestions({ query: "扫雷", count: 6 })[0].name, "扫雷");
+  assert.equal(createFastGenAppSuggestions({ query: "数独", count: 6 })[0].name, "数独");
+  assert.equal(createFastGenAppSuggestions({ query: "贪吃蛇", count: 6 })[0].name, "贪吃蛇");
   assert(
     createFastGenAppSuggestions({
       query: "build a personal recipe organizer with pantry tracking",
@@ -355,6 +362,92 @@ test("generation fingerprint invalidates model and policy-sensitive artifacts", 
   );
 });
 
+test("game recipes route common games to trusted local engines", () => {
+  const cases = [
+    ["经典扫雷", "game.minesweeper", "game.minesweeper.reveal"],
+    ["数独游戏", "game.sudoku", "game.sudoku.input"],
+    ["贪吃蛇", "game.snake", "game.snake.start"],
+  ] as const;
+  for (const [query, engine, action] of cases) {
+    const recipe = resolveAppRecipe({
+      query,
+      name: query,
+      description: "可玩的本地游戏",
+      language: "zh",
+      creativity: 80,
+    });
+    assert(recipe, `${query} did not resolve a recipe`);
+    assert.equal(recipe.engine, engine);
+    assert(recipe.artifact.html.includes(`data-engine="${engine}"`));
+    assert(recipe.artifact.html.includes(`data-action="${action}"`));
+    assert.equal(recipe.artifact.interactionMode, "hybrid");
+    const compiled = compileArtifact(recipe.artifact);
+    assert.equal(compiled.format, GEN_APP_FORMAT);
+    assert(compiled.markup?.includes(`data-engine="${engine}"`));
+  }
+  assert.equal(resolveAppRecipe({
+    query: "quantum garden",
+    name: "Quantum Garden",
+    description: "Unknown app",
+    language: "en",
+    creativity: 25,
+  }), null);
+});
+
+test("generation orchestrator serves game recipes before Agentic and shares semantic cache", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "openos-game-recipe-test-"));
+  const database = createOpenOsDatabaseAt(join(directory, "openos.sqlite"));
+  try {
+    const repository = new SqliteGenAppRepository(database);
+    let modelCalls = 0;
+    const generator: GenAppGenerator = {
+      async suggest() { return []; },
+      async generate() {
+        modelCalls += 1;
+        throw new Error("game recipe must not call the model");
+      },
+      async continueContent() { return ""; },
+    };
+    const orchestrator = new GenerationOrchestrator({
+      suggestionProvider: generator,
+      instantGenerator: generator,
+      agenticGenerator: generator,
+      repository,
+      cache: new InMemoryGenerationCache(),
+      settings: () => ({
+        language: "zh",
+        creativity: 80,
+        profile: "agentic",
+        suggestionCount: 6,
+        timeoutMs: 60_000,
+      }),
+    });
+    const first = await orchestrator.generateDraft(
+      {
+        query: "扫雷",
+        idempotencyKey: "recipe-minesweeper-a",
+        suggestion: { id: "mine-a", name: "扫雷", description: "经典扫雷", iconEmoji: "💣", iconTheme: "blue" },
+      },
+      context(),
+    );
+    const cached = await orchestrator.generateDraft(
+      {
+        query: "生成一个经典扫雷游戏",
+        idempotencyKey: "recipe-minesweeper-b",
+        suggestion: { id: "mine-b", name: "经典扫雷", description: "本地棋盘游戏", iconEmoji: "💣", iconTheme: "orange" },
+      },
+      context(),
+    );
+    assert.equal(modelCalls, 0);
+    assert.notEqual(first.summary.id, cached.summary.id);
+    assert.equal(first.artifact.contentSha256, cached.artifact.contentSha256);
+    assert(first.artifact.markup?.includes('data-engine="game.minesweeper"'));
+  } finally {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("in-flight generation isolates subscriber cancellation and clears failures", async () => {
   const registry = new InFlightGenerationRegistry<string>();
   const firstAbort = new AbortController();
@@ -407,7 +500,7 @@ test("legacy Gen Apps settings migrate to the Instant default", () => {
       }),
     );
     const settings = loadGenAppsSettings(loadServerEnv({ dataDir: directory }));
-    assert.equal(settings.version, 2);
+    assert.equal(settings.version, 3);
     assert.equal(settings.generationMode, "fast");
     writeFileSync(
       join(directory, "gen-apps-settings.json"),
@@ -420,6 +513,13 @@ test("legacy Gen Apps settings migrate to the Instant default", () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("Gen Apps refinement rounds are finite and bounded", () => {
+  assert.equal(clampAgentMaxRounds(0), 3);
+  assert.equal(clampAgentMaxRounds(1), 1);
+  assert.equal(clampAgentMaxRounds(2), 2);
+  assert.equal(clampAgentMaxRounds(10), 3);
 });
 
 test("V2 compiler removes executable markup and declares stable actions", () => {
