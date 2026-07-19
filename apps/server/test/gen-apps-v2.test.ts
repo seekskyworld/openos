@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -33,6 +33,11 @@ import { RuntimeSessionStore } from "../src/gen-apps/runtime-session-store.js";
 import { createOpenOsDatabaseAt } from "../src/database/openos-database.js";
 import { loadServerEnv } from "../src/env.js";
 import { LlmGenAppGenerator } from "../src/gen-apps/infrastructure/llm-gen-app-generator.js";
+import { GenerationOrchestrator } from "../src/gen-apps/generation/generation-orchestrator.js";
+import { InMemoryGenerationCache } from "../src/gen-apps/infrastructure/in-memory-generation-cache.js";
+import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight-generation.js";
+import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
+import { loadGenAppsSettings } from "../src/gen-apps/gen-app-settings.js";
 
 const context = () => ({
   requestId: "test-request",
@@ -164,6 +169,248 @@ test("deterministic fake keeps the selected app identity and interaction style",
   assert(artifact.html.includes("Forecasts with &lt;alerts&gt;"));
   assert(artifact.html.includes("weather &lt;tracker&gt;"));
   assert(!artifact.html.includes("<alerts>"));
+});
+
+test("generation orchestrator composes blueprints, deduplicates misses, and reuses artifacts", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "openos-generation-orchestrator-test-"));
+  const database = createOpenOsDatabaseAt(join(directory, "openos.sqlite"));
+  try {
+    const repository = new SqliteGenAppRepository(database);
+    let generateCalls = 0;
+    const generator: GenAppGenerator = {
+      async suggest() {
+        return [];
+      },
+      async generate(input, signal) {
+        generateCalls += 1;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 20);
+          signal.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(signal.reason);
+          }, { once: true });
+        });
+        return {
+          html: `<main class="os-app"><section id="result"><h1>${input.name}</h1></section></main>`,
+          provider: "test",
+          model: "instant",
+          interactionMode: "hybrid",
+        };
+      },
+      async continueContent() {
+        return "<section id=\"result\">continued</section>";
+      },
+    };
+    const orchestrator = new GenerationOrchestrator({
+      suggestionProvider: generator,
+      instantGenerator: generator,
+      agenticGenerator: generator,
+      repository,
+      cache: new InMemoryGenerationCache(),
+      settings: () => ({
+        language: "en",
+        creativity: 60,
+        profile: "instant",
+        suggestionCount: 6,
+        timeoutMs: 5_000,
+      }),
+    });
+    const suggestion = {
+      id: "s-quantum",
+      name: "Quantum Garden",
+      description: "An unfamiliar interactive garden",
+      iconEmoji: "✨",
+      iconTheme: "blue" as const,
+    };
+    const [first, joined] = await Promise.all([
+      orchestrator.generateDraft(
+        { suggestion, query: "quantum garden", idempotencyKey: "generation-a" },
+        context(),
+      ),
+      orchestrator.generateDraft(
+        { suggestion, query: "quantum garden", idempotencyKey: "generation-b" },
+        context(),
+      ),
+    ]);
+    assert.equal(generateCalls, 1);
+    assert.notEqual(first.summary.id, joined.summary.id);
+    const cached = await orchestrator.generateDraft(
+      { suggestion, query: "quantum garden", idempotencyKey: "generation-c" },
+      context(),
+    );
+    assert.equal(generateCalls, 1);
+    assert(cached.artifact.markup?.includes("Quantum Garden"));
+    await orchestrator.generateDraft(
+      {
+        suggestion,
+        query: "quantum garden",
+        idempotencyKey: "generation-regenerate",
+        bypassCache: true,
+      },
+      context(),
+    );
+    assert.equal(generateCalls, 2);
+
+    let blueprintGenerateCalls = 0;
+    const blueprintGenerator: GenAppGenerator = {
+      ...generator,
+      async generate() {
+        blueprintGenerateCalls += 1;
+        throw new Error("blueprint should avoid the model");
+      },
+    };
+    const blueprintOrchestrator = new GenerationOrchestrator({
+      suggestionProvider: blueprintGenerator,
+      instantGenerator: blueprintGenerator,
+      agenticGenerator: blueprintGenerator,
+      repository,
+      cache: new InMemoryGenerationCache(),
+      settings: () => ({
+        language: "zh",
+        creativity: 25,
+        profile: "instant",
+        suggestionCount: 6,
+        timeoutMs: 5_000,
+      }),
+    });
+    const blueprintDraft = await blueprintOrchestrator.generateDraft(
+      {
+        suggestion: {
+          id: "s-todo",
+          name: "待办清单",
+          description: "记录任务",
+          iconEmoji: "✅",
+          iconTheme: "green",
+        },
+        query: "做一个待办清单",
+        idempotencyKey: "blueprint-a",
+      },
+      context(),
+    );
+    assert.equal(blueprintGenerateCalls, 0);
+    assert(blueprintDraft.artifact.markup?.includes('data-action="list.add"'));
+  } finally {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("generation cache expires entries and prunes least recently used artifacts", () => {
+  const cache = new InMemoryGenerationCache();
+  const put = (fingerprint: string, markup: string, expiresAt = 10_000) =>
+    cache.put({
+      fingerprint,
+      intentKey: null,
+      markup,
+      interactionMode: "hybrid",
+      provider: "test",
+      model: "test",
+      createdAt: 1,
+      expiresAt,
+    });
+  put("expired", "old", 5);
+  put("hot", "1234");
+  put("cold", "5678");
+  assert.equal(cache.get("expired", 5), null);
+  assert(cache.get("hot", 20));
+  assert.equal(cache.prune(21, 1, 100), 1);
+  assert(cache.get("hot", 22));
+  assert.equal(cache.get("cold", 22), null);
+
+  put("large", "1234567890");
+  assert.equal(cache.prune(23, 10, 5), 1);
+  assert.equal(cache.get("large", 24), null);
+});
+
+test("generation fingerprint invalidates model and policy-sensitive artifacts", () => {
+  const input = {
+    query: "calculator",
+    suggestion: {
+      id: "fingerprint-id-is-ignored",
+      name: "Calculator",
+      description: "Local calculator",
+      iconEmoji: "🧮",
+      iconTheme: "orange" as const,
+    },
+    language: "en" as const,
+    creativity: 25,
+    profile: "instant" as const,
+    generatorKey: "openai-compatible:https://example.test:v1:model-a",
+  };
+  const first = createGenerationFingerprint(input);
+  assert.equal(first, createGenerationFingerprint({ ...input, creativity: 20 }));
+  assert.notEqual(first, createGenerationFingerprint({ ...input, creativity: 26 }));
+  assert.notEqual(
+    first,
+    createGenerationFingerprint({ ...input, generatorKey: "openai-compatible:https://example.test:v1:model-b" }),
+  );
+});
+
+test("in-flight generation isolates subscriber cancellation and clears failures", async () => {
+  const registry = new InFlightGenerationRegistry<string>();
+  const firstAbort = new AbortController();
+  let starts = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const start = async () => {
+    starts += 1;
+    await gate;
+    return "done";
+  };
+  const cancelled = registry.run("shared", firstAbort.signal, {}, start);
+  const survivor = registry.run("shared", new AbortController().signal, {}, start);
+  firstAbort.abort();
+  release();
+  await assert.rejects(cancelled, { name: "AbortError" });
+  assert.equal((await survivor).value, "done");
+  assert.equal(starts, 1);
+
+  let failingStarts = 0;
+  const fail = () => {
+    failingStarts += 1;
+    return Promise.reject(new Error("failed once"));
+  };
+  await assert.rejects(
+    registry.run("failure", new AbortController().signal, {}, fail),
+    /failed once/,
+  );
+  await assert.rejects(
+    registry.run("failure", new AbortController().signal, {}, fail),
+    /failed once/,
+  );
+  assert.equal(failingStarts, 2);
+});
+
+test("legacy Gen Apps settings migrate to the Instant default", () => {
+  const directory = mkdtempSync(join(tmpdir(), "openos-gen-app-settings-test-"));
+  try {
+    writeFileSync(
+      join(directory, "gen-apps-settings.json"),
+      JSON.stringify({
+        version: 1,
+        suggestionCount: 6,
+        creativity: 25,
+        appLanguage: "auto",
+        generationMode: "agentic",
+        agentMaxRounds: 3,
+      }),
+    );
+    const settings = loadGenAppsSettings(loadServerEnv({ dataDir: directory }));
+    assert.equal(settings.version, 2);
+    assert.equal(settings.generationMode, "fast");
+    writeFileSync(
+      join(directory, "gen-apps-settings.json"),
+      JSON.stringify({ version: 2, generationMode: "invalid" }),
+    );
+    assert.equal(
+      loadGenAppsSettings(loadServerEnv({ dataDir: directory })).generationMode,
+      "fast",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("V2 compiler removes executable markup and declares stable actions", () => {
@@ -625,7 +872,7 @@ test("V2 fragments are scriptless by default", () => {
   );
 });
 
-test("migration v3 upgrades an existing V2 database with structured payload storage", () => {
+test("migration v4 upgrades an existing V2 database with payload and generation cache storage", () => {
   const directory = mkdtempSync(join(tmpdir(), "openos-genapps-migration-test-"));
   const path = join(directory, "openos.sqlite");
   const old = new DatabaseSync(path);
@@ -654,7 +901,11 @@ test("migration v3 upgrades an existing V2 database with structured payload stor
     const version = migrated.db.prepare("PRAGMA user_version").get() as {
       user_version: number;
     };
-    assert.equal(version.user_version, 3);
+    assert.equal(version.user_version, 4);
+    const cacheTable = migrated.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gen_app_generation_cache'")
+      .get() as { name?: string } | undefined;
+    assert.equal(cacheTable?.name, "gen_app_generation_cache");
   } finally {
     migrated.close();
     rmSync(directory, { recursive: true, force: true });

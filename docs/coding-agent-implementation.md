@@ -1,6 +1,6 @@
 # Gen Apps Coding Agent 实施文档
 
-> 状态：待 owner 审核（与 `coding-agent-architecture.md` 配套）
+> 状态：核心链路已实施；本文保留 agentic 精修与后续拆分事项
 > 原则：每步可独立验收、可回退；接缝不动（GenAppGenerator 端口）；先校验器后循环，先 fake 后真模型
 
 ---
@@ -80,16 +80,21 @@ async function runAgentLoop(deps, firstPrompt: CoreMessage[], signal): Promise<A
 
 ### 2.4 组合根装配
 
-`create-server.ts`：
+`create-server.ts`（当前实现）：
 
 ```ts
 const genAppsGenerator =
   process.env.OPENOS_GENAPPS_FAKE === "1"
     ? new DeterministicFakeGenerator()
-    : new SettingsSwitchedGenerator(env);   // 每请求读 generationMode 选 fast/agentic
+    : new GenerationOrchestrator({          // cache -> blueprint -> instant -> agentic
+        suggestionProvider,
+        instantGenerator,
+        agenticGenerator,
+        cache,
+      });
 ```
 
-`SettingsSwitchedGenerator` 是一个 10 行的代理类：读取设置后委托给内部的 `LlmGenAppGenerator` 或 `AgenticGenAppGenerator`。
+候选、成品生成和缓存通过独立端口注入；组合根不再把设置切换、缓存和模型协议揉进单一 generator。
 
 ### 2.5 验收
 
@@ -114,7 +119,7 @@ const genAppsGenerator =
 
 `gen-app-settings.ts`：
 
-- `generationMode: "fast" | "agentic"`（默认 `"agentic"`）+ `clampMode`
+- `generationMode: "fast" | "agentic"`（默认 `"fast"`）+ `clampMode`
 - `agentMaxRounds: number`（默认 3，clamp 1-4）
 - `PUT /api/settings/gen-apps` 透传两字段（已有路由，加两行）
 

@@ -1,8 +1,13 @@
 # 生成式运行时（Generative Runtime）架构设计
 
-> 状态：owner 已批准。T1 与 Hybrid Generative Runtime V2 已实施；设置总开关和运行时遥测仍作为后续独立事项。
+> 状态：owner 已批准。T1、Hybrid Runtime V2 与 cache-first 首次生成已实施；设置总开关和运行时遥测仍作为后续独立事项。
 
 ## Hybrid Generative Runtime V2 实施结果
+
+首次生成与运行时 patch 是两条独立链路：首次生成由 `GenerationOrchestrator` 负责
+fingerprint、成品缓存、本地 blueprint、Instant 单轮和显式 Agentic 精修；运行时
+交互仍由 `RuntimeSessionStore` + `RuntimeInteractionCoordinator` 负责 revision 和
+最小目标 patch。缓存命中只复用编译后的成品，不复用任何窗口 session 或模型历史。
 
 旧 `/continue` 能力继续服务 `html-single-file` V1 制品；新生成应用默认使用
 `openos-markup` V2。V2 不再允许片段脚本，而是由预载 UI Kit 和 ActionRuntime

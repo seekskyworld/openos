@@ -47,10 +47,13 @@ import {
 } from "./auth-store.js";
 import { completeOauthCallback, startOauthAuthorize } from "./oauth.js";
 import { getOpenOsDatabase } from "./database/openos-database.js";
-import { SettingsSwitchedGenerator } from "./gen-apps/agent/agentic-generator.js";
+import { AgenticGenAppGenerator } from "./gen-apps/agent/agentic-generator.js";
 import { GenAppsService } from "./gen-apps/gen-apps-service.js";
 import { GenAppsController } from "./gen-apps/http/gen-apps-controller.js";
 import { DeterministicFakeGenerator } from "./gen-apps/infrastructure/deterministic-fake-generator.js";
+import { LlmGenAppGenerator } from "./gen-apps/infrastructure/llm-gen-app-generator.js";
+import { SqliteGenerationCache } from "./gen-apps/infrastructure/sqlite-generation-cache.js";
+import { GenerationOrchestrator } from "./gen-apps/generation/generation-orchestrator.js";
 import {
   agenticBudgetMs,
   creativityTier,
@@ -81,25 +84,49 @@ export function startBridgeServer(options: CreateOptions = {}) {
   const authMode: BootstrapInfo["authMode"] = env.bridgeToken ? "bridge-token" : "open";
 
   // 组合根：装配 Gen Apps 模块。
-  // 默认走 SettingsSwitched（fast/agentic 热切换）；
-  // OPENOS_GENAPPS_FAKE=1 强制确定性 fake（开发/测试）。
-  const switchedGenerator =
-    process.env.OPENOS_GENAPPS_FAKE === "1"
-      ? null
-      : new SettingsSwitchedGenerator(env);
-  const genAppsGenerator =
-    switchedGenerator ??
-    new DeterministicFakeGenerator(() => {
+  // 编排器按请求读取设置：缓存/蓝图优先，再选择 Instant 或 Agentic；
+  // OPENOS_GENAPPS_FAKE=1 仅替换外部模型适配器（开发/测试）。
+  const database = getOpenOsDatabase(env);
+  const fakeGenerator = process.env.OPENOS_GENAPPS_FAKE === "1"
+    ? new DeterministicFakeGenerator(() => {
       const settings = loadGenAppsSettings(env);
       return {
         language: settings.appLanguage,
         style: creativityTier(settings.creativity),
       };
-    });
+    })
+    : null;
+  const instantGenerator = fakeGenerator ?? new LlmGenAppGenerator(env);
+  const agenticGenerator = fakeGenerator ?? new AgenticGenAppGenerator(env);
+  const repository = new SqliteGenAppRepository(database);
+  const generation = new GenerationOrchestrator({
+    suggestionProvider: instantGenerator,
+    instantGenerator,
+    agenticGenerator,
+    repository,
+    cache: new SqliteGenerationCache(database),
+    settings: () => {
+      const settings = loadGenAppsSettings(env);
+      const llm = fakeGenerator ? null : resolveEffectiveLlm(env);
+      return {
+        language: settings.appLanguage,
+        creativity: settings.creativity,
+        profile: settings.generationMode === "agentic" ? "agentic" : "instant",
+        generatorKey: fakeGenerator
+          ? "deterministic-fake"
+          : `${llm?.provider}:${llm?.protocol}:${llm?.baseUrl}:${llm?.model}`,
+        suggestionCount: settings.suggestionCount,
+        timeoutMs: settings.generationMode === "agentic"
+          ? agenticBudgetMs(settings.agentMaxRounds)
+          : 120_000,
+      };
+    },
+  });
   const genAppsController = new GenAppsController({
     service: new GenAppsService({
-      generator: genAppsGenerator,
-      repository: new SqliteGenAppRepository(getOpenOsDatabase(env)),
+      generator: instantGenerator,
+      repository,
+      generation,
       defaultSuggestionCount: () => loadGenAppsSettings(env).suggestionCount,
       // 总预算只防失控（卡死由 llm-core idle 超时负责）：
       // agentic 随轮次伸缩；fast 单发也给足慢速上游空间
@@ -113,10 +140,10 @@ export function startBridgeServer(options: CreateOptions = {}) {
     }),
     sendJson,
     readBody,
-    progress: switchedGenerator
+    progress: agenticGenerator instanceof AgenticGenAppGenerator
       ? {
-          bind: (key) => switchedGenerator.bindProgressKey(key),
-          get: (key) => switchedGenerator.getProgressPublic(key),
+          bind: (key) => agenticGenerator.bindProgressKey(key),
+          get: (key) => agenticGenerator.getProgressPublic(key),
         }
       : undefined,
   });

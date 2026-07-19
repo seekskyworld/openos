@@ -39,20 +39,50 @@ export type ContinuePortInput = {
   messages: CoreMessage[];
 };
 
-export interface GenAppGenerator {
+export interface SuggestionProvider {
   suggest(
     input: SuggestPortInput,
     signal: AbortSignal,
   ): Promise<UntrustedSuggestion[]>;
+}
+
+export interface ArtifactGenerator {
   generate(
     input: GeneratePortInput,
     signal: AbortSignal,
   ): Promise<UntrustedArtifact>;
+}
+
+export interface FragmentGenerator {
   /** 单轮快速续生成，返回未清洗的 fragment 文本 */
   continueContent(
     input: ContinuePortInput,
     signal: AbortSignal,
   ): Promise<string>;
+}
+
+/** 兼容组合适配器；新编排代码依赖上面的最小能力端口。 */
+export interface GenAppGenerator
+  extends SuggestionProvider,
+    ArtifactGenerator,
+    FragmentGenerator {}
+
+export type CachedGeneration = {
+  fingerprint: string;
+  intentKey: string | null;
+  markup: string;
+  interactionMode: "hybrid" | "improv";
+  provider: string;
+  model: string;
+  createdAt: number;
+  expiresAt: number;
+};
+
+export interface GenerationCache {
+  get(fingerprint: string, now: number): CachedGeneration | null;
+  put(value: CachedGeneration): void;
+  delete(fingerprint: string): void;
+  prune(now: number, maxEntries: number, maxBytes: number): number;
 }
 
 /** 应用身份（续生成上下文用，不 touch openedAt） */

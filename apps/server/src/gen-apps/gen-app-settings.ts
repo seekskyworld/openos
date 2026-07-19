@@ -26,12 +26,12 @@ export type { GenAppLanguage };
 export type GenerationMode = GenAppGenerationMode;
 
 export type GenAppsPersistedSettings = GenAppsSettings & {
-  version: 1;
+  version: 1 | 2;
 };
 
 export const DEFAULT_GEN_APPS_SETTINGS: GenAppsPersistedSettings = {
   ...GEN_APP_DEFAULT_SETTINGS,
-  version: 1,
+  version: 2,
 };
 
 export function clampLanguage(value: unknown): GenAppLanguage {
@@ -39,7 +39,7 @@ export function clampLanguage(value: unknown): GenAppLanguage {
 }
 
 export function clampMode(value: unknown): GenerationMode {
-  return value === "fast" ? "fast" : "agentic";
+  return value === "agentic" ? "agentic" : "fast";
 }
 
 export function clampAgentMaxRounds(value: unknown): number {
@@ -76,11 +76,13 @@ export function loadGenAppsSettings(env: ServerEnv): GenAppsPersistedSettings {
     if (!existsSync(path)) return { ...DEFAULT_GEN_APPS_SETTINGS };
     const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<GenAppsPersistedSettings>;
     return {
-      version: 1,
+      version: 2,
       suggestionCount: clampSuggestionCount(raw.suggestionCount),
       creativity: clampCreativity(raw.creativity),
       appLanguage: clampLanguage(raw.appLanguage),
-      generationMode: clampMode(raw.generationMode),
+      // v1 的默认 agentic 会让升级后的首次点击继续走慢链；v2 将 Instant 设为默认，
+      // 用户在新设置页显式选择 agentic 后会以 v2 持久化，不再被迁移覆盖。
+      generationMode: raw.version === 1 ? "fast" : clampMode(raw.generationMode),
       agentMaxRounds: clampAgentMaxRounds(raw.agentMaxRounds),
     };
   } catch {
@@ -103,7 +105,7 @@ export function saveGenAppsSettings(
 ): GenAppsPersistedSettings {
   const current = loadGenAppsSettings(env);
   const next: GenAppsPersistedSettings = {
-    version: 1,
+    version: 2,
     suggestionCount:
       update.suggestionCount !== undefined
         ? clampSuggestionCount(update.suggestionCount)

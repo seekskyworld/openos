@@ -68,6 +68,7 @@ export interface GenAppsClient {
     query: string,
     idempotencyKey: string,
     signal: AbortSignal,
+    options?: { bypassCache?: boolean },
   ): Promise<GenAppDraft>;
   install(appId: string): Promise<GenAppSummary>;
   list(): Promise<GenAppSummary[]>;
@@ -107,6 +108,7 @@ export interface GenAppsClient {
       onPhase?: (phase: { phase: string; round?: number }) => void;
     },
     signal: AbortSignal,
+    options?: { bypassCache?: boolean },
   ): Promise<GenAppDraft>;
 }
 
@@ -223,10 +225,11 @@ export class HttpGenAppsClient implements GenAppsClient {
     query: string,
     idempotencyKey: string,
     signal: AbortSignal,
+    options?: { bypassCache?: boolean },
   ): Promise<GenAppDraft> {
     const body = (await request("/gen-apps/drafts", {
       method: "POST",
-      body: JSON.stringify({ suggestion, query, idempotencyKey }),
+      body: JSON.stringify({ suggestion, query, idempotencyKey, bypassCache: options?.bypassCache }),
       signal,
     })) as Record<string, unknown>;
     return parseDraft(body.draft);
@@ -323,6 +326,7 @@ export class HttpGenAppsClient implements GenAppsClient {
       onPhase?: (phase: { phase: string; round?: number }) => void;
     },
     signal: AbortSignal,
+    options?: { bypassCache?: boolean },
   ): Promise<GenAppDraft> {
     const config = resolveConfig();
     const headers = new Headers({ "content-type": "application/json" });
@@ -330,7 +334,7 @@ export class HttpGenAppsClient implements GenAppsClient {
     const response = await fetch(`${config.apiBase}/gen-apps/drafts/stream`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ suggestion, query, idempotencyKey }),
+      body: JSON.stringify({ suggestion, query, idempotencyKey, bypassCache: options?.bypassCache }),
       signal,
     });
     const contentType = response.headers.get("content-type") ?? "";

@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
  * v1：chat 表（与既有 chat-store 建表语句等价，IF NOT EXISTS 兼容已存在库）
  * v2：gen_apps / gen_app_artifacts / gen_app_data
  * v3：Artifact V2 的结构化 payload（保留 html 作为 V1/兼容回退）
+ * v4：生成制品缓存（与用户 draft/installed 生命周期分离）
  */
 
 type Migration = {
@@ -84,6 +85,28 @@ const MIGRATIONS: Migration[] = [
     version: 3,
     up(db) {
       db.exec("ALTER TABLE gen_app_artifacts ADD COLUMN payload_json TEXT;");
+    },
+  },
+  {
+    version: 4,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS gen_app_generation_cache (
+          fingerprint             TEXT PRIMARY KEY,
+          intent_key              TEXT,
+          markup                  TEXT NOT NULL,
+          interaction_mode        TEXT NOT NULL CHECK (interaction_mode IN ('hybrid', 'improv')),
+          provider                TEXT NOT NULL,
+          model                   TEXT NOT NULL,
+          created_at              INTEGER NOT NULL,
+          last_hit_at             INTEGER NOT NULL,
+          hit_count               INTEGER NOT NULL DEFAULT 0,
+          size_bytes              INTEGER NOT NULL,
+          expires_at              INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_gen_app_cache_expiry
+          ON gen_app_generation_cache(expires_at, last_hit_at);
+      `);
     },
   },
 ];

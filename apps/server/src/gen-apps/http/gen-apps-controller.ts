@@ -159,6 +159,7 @@ export class GenAppsController {
               suggestion,
               query: String(record.query ?? ""),
               idempotencyKey,
+              bypassCache: record.bypassCache === true,
             },
             context,
             {
@@ -202,6 +203,7 @@ export class GenAppsController {
               suggestion,
               query: String(record.query ?? ""),
               idempotencyKey,
+              bypassCache: record.bypassCache === true,
             },
             context,
           );

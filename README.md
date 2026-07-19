@@ -32,7 +32,7 @@
 
 ### 🪄 Gen Apps：搜索即生成应用
 - 启动台输入关键词 → 浏览器按已加载设置同步生成完整候选；Bridge API 为其他调用方复用同一策略（均不等待模型）
-- 点击候选 → **Coding Agent 多轮生成**：生成 → 本地校验（语法 / 外链 / 交互性 / 体积）→ 错误喂回 → 修复，直到可用或按策略降级
+- 点击候选 → **Cache-first Instant 生成**：成品缓存 → 本地 blueprint → 单轮 Instant；仅显式精修模式进入 Coding Agent 多轮校验/修复
 - 生成的应用运行在 CSP + sandbox iframe 中（无网络、无宿主访问）；关闭即安装进启动台，二次打开直接读库、不再调模型
 - 生成偏好滑杆四档：系统工具 → 商店应用 → 独立开发 → 天马行空（同时映射提示词风格与采样温度）
 
@@ -56,7 +56,7 @@ packages/shared   前后端共享类型、线协议 schema、错误码
 
 设计要点：
 
-- **端口与适配器**：LLM 生成器、仓储、运行时都是端口注入，`create-server.ts` 只做组合根；fake / llm / agentic 生成器可按配置切换
+- **端口与适配器**：Suggestion / Artifact / Fragment / Cache / Runtime 都是独立端口，`GenerationOrchestrator` 负责缓存优先和并发合并，`create-server.ts` 只做组合根；fake / blueprint / llm / agentic 生成器可替换
 - **agent-core 与任务解耦**：循环内核只懂「生成 → 校验 → 喂回 → 修复」，HTML 应用只是一个 `AgentTask<string>` 实现——接入新的生成任务（SQL、图表、脚本…）只需再写一个任务包
 - **安全**：生成代码经 ArtifactCompiler 重建外壳并注入 CSP，运行于 `sandbox="allow-scripts"` iframe；密钥只存在服务端，renderer 无 Node 权限
 - **双端一致**：浏览器走 Vite 代理 `/api`，Electron 走 preload 注入的 apiBase + token，同一套 UI 与接口；dev / stable 通道数据隔离

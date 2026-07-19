@@ -325,7 +325,7 @@ export const GEN_APP_DEFAULT_SETTINGS: GenAppsSettings = {
   suggestionCount: GEN_APP_LIMITS.suggestionCountDefault,
   creativity: 25,
   appLanguage: "auto",
-  generationMode: "agentic",
+  generationMode: "fast",
   agentMaxRounds: 3,
 };
 

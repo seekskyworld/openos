@@ -94,7 +94,7 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         ],
         temperature: creativityGenerationTemperature(settings.creativity),
         reasoningEffort: "off",
-        maxOutputTokens: 4_000,
+        maxOutputTokens: 2_500,
       },
     );
 

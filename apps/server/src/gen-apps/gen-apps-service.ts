@@ -1,25 +1,20 @@
-import { randomUUID } from "node:crypto";
 import {
-  clampSuggestionCount,
   GEN_APP_FORMAT,
   GEN_APP_LEGACY_FORMAT,
   GEN_APP_LIMITS,
-  GEN_APP_PROMPT_VERSION,
   isGenAppContinueIntent,
-  isGenAppIconTheme,
   type GenAppInteractRequest,
   type GenAppInteractResponse,
   type GenAppDraft,
-  type GenAppIconTheme,
   type GenAppLaunchBundle,
   type GenAppRuntimeResumeRequest,
   type GenAppRuntimeResumeResponse,
   type GenAppSuggestion,
   type GenAppSummary,
 } from "@openos/shared";
-import { compileArtifact, compileFragment } from "./artifact-compiler.js";
+import { compileFragment } from "./artifact-compiler.js";
 import { ContinueSessionStore } from "./continue-session-store.js";
-import { genAppError, type UntrustedSuggestion } from "./domain.js";
+import { genAppError } from "./domain.js";
 import type { GenAppLanguage } from "./gen-app-settings.js";
 import type { CoreMessage } from "../llm-core/index.js";
 import { buildContinuePrompt } from "./prompt-policy.js";
@@ -31,6 +26,9 @@ import type {
   GenAppIdentity,
   GenAppRepository,
 } from "./ports.js";
+import { GenerationOrchestrator } from "./generation/generation-orchestrator.js";
+import { InMemoryGenerationCache } from "./infrastructure/in-memory-generation-cache.js";
+import { GenAppCatalogService } from "./catalog-service.js";
 
 /**
  * GenApps 应用服务：用例编排、状态转换、幂等、配额。
@@ -45,6 +43,7 @@ export type RequestContext = {
 type ServiceDeps = {
   generator: GenAppGenerator;
   repository: GenAppRepository;
+  generation?: GenerationOrchestrator;
   /** 测试可注入固定 now */
   now?: () => number;
   /** suggest count 缺省值提供者（读设置）；缺省用共享默认 */
@@ -55,62 +54,13 @@ type ServiceDeps = {
   appLanguage?: () => GenAppLanguage;
 };
 
-const FALLBACK_THEMES: GenAppIconTheme[] = [
-  "blue",
-  "purple",
-  "pink",
-  "orange",
-  "green",
-  "teal",
-];
-
-function sanitizeSuggestion(
-  raw: UntrustedSuggestion,
-  index: number,
-): GenAppSuggestion | null {
-  const name = typeof raw.name === "string" ? raw.name.trim().slice(0, 60) : "";
-  if (!name) return null;
-  const description =
-    typeof raw.description === "string" ? raw.description.slice(0, 300) : "";
-  const iconEmoji =
-    typeof raw.iconEmoji === "string" && raw.iconEmoji.trim()
-      ? raw.iconEmoji.trim().slice(0, 8)
-      : "✨";
-  const iconTheme = isGenAppIconTheme(raw.iconTheme)
-    ? raw.iconTheme
-    : FALLBACK_THEMES[index % FALLBACK_THEMES.length];
-  return {
-    id: `gs-${randomUUID()}`,
-    name,
-    description,
-    iconEmoji,
-    iconTheme,
-  };
-}
-
-function normalizeQuery(value: unknown): string {
-  const query = String(value ?? "").trim();
-  if (
-    query.length < GEN_APP_LIMITS.queryMinLength ||
-    query.length > GEN_APP_LIMITS.queryMaxLength
-  ) {
-    throw genAppError(
-      "validation_failed",
-      `query must be ${GEN_APP_LIMITS.queryMinLength}-${GEN_APP_LIMITS.queryMaxLength} chars.`,
-      400,
-    );
-  }
-  return query;
-}
-
 export class GenAppsService {
   private readonly generator: GenAppGenerator;
   private readonly repository: GenAppRepository;
+  private readonly generation: GenerationOrchestrator;
+  private readonly catalog: GenAppCatalogService;
   private readonly nowFn: () => number;
-  private readonly defaultCountFn: () => number;
-  private readonly generateTimeoutMsFn: () => number;
   private readonly appLanguageFn: () => GenAppLanguage;
-  private activeGenerations = 0;
   /** 续生成滑动窗口（appId → 时间戳数组，频控按应用维度） */
   private readonly continueHistory = new Map<string, number[]>();
   /** 并发锁按会话维度（同应用的不同会话/标签页可并行） */
@@ -132,12 +82,25 @@ export class GenAppsService {
     this.generator = deps.generator;
     this.repository = deps.repository;
     this.nowFn = deps.now ?? (() => Date.now());
-    this.defaultCountFn =
-      deps.defaultSuggestionCount ??
-      (() => GEN_APP_LIMITS.suggestionCountDefault);
-    this.generateTimeoutMsFn =
-      deps.generateTimeoutMs ?? (() => GEN_APP_LIMITS.generateTimeoutMs);
     this.appLanguageFn = deps.appLanguage ?? (() => "auto");
+    this.catalog = new GenAppCatalogService(this.repository, this.nowFn);
+    this.generation = deps.generation ?? new GenerationOrchestrator({
+      suggestionProvider: deps.generator,
+      instantGenerator: deps.generator,
+      agenticGenerator: deps.generator,
+      repository: deps.repository,
+      cache: new InMemoryGenerationCache(),
+      now: this.nowFn,
+      settings: () => ({
+        language: this.appLanguageFn(),
+        creativity: 25,
+        // 兼容未注入编排器的测试/嵌入调用：保留原始 generator 行为；
+        // 生产组合根始终显式注入并按设置默认使用 Instant。
+        profile: "agentic",
+        suggestionCount: deps.defaultSuggestionCount?.() ?? GEN_APP_LIMITS.suggestionCountDefault,
+        timeoutMs: deps.generateTimeoutMs?.() ?? GEN_APP_LIMITS.generateTimeoutMs,
+      }),
+    });
     this.runtimeSessions = new RuntimeSessionStore(this.nowFn);
     this.runtimeInteraction = new RuntimeInteractionCoordinator({
       generator: this.generator,
@@ -150,29 +113,7 @@ export class GenAppsService {
     input: { query: string; count?: number },
     context: RequestContext,
   ): Promise<GenAppSuggestion[]> {
-    const query = normalizeQuery(input.query);
-    const count = clampSuggestionCount(
-      input.count !== undefined ? input.count : this.defaultCountFn(),
-    );
-
-    const raw = await this.generator.suggest({ query, count }, context.signal);
-    const seenNames = new Set<string>();
-    const out: GenAppSuggestion[] = [];
-    for (let i = 0; i < raw.length && out.length < count; i++) {
-      const s = sanitizeSuggestion(raw[i], i);
-      if (!s || seenNames.has(s.name)) continue;
-      seenNames.add(s.name);
-      out.push(s);
-    }
-    if (out.length === 0) {
-      throw genAppError(
-        "invalid_model_output",
-        "Generator returned no valid suggestions.",
-        422,
-        true,
-      );
-    }
-    return out;
+    return this.generation.suggest(input, context.signal);
   }
 
   async generateDraft(
@@ -180,6 +121,7 @@ export class GenAppsService {
       suggestion: GenAppSuggestion;
       query: string;
       idempotencyKey: string;
+      bypassCache?: boolean;
     },
     context: RequestContext,
     hooks?: {
@@ -187,96 +129,12 @@ export class GenAppsService {
       onPhase?: (phase: { phase: string; round?: number }) => void;
     },
   ): Promise<GenAppDraft> {
-    const { suggestion } = input;
-    const query = normalizeQuery(input.query);
-    if (!suggestion?.name?.trim()) {
+    if (!input.suggestion?.name?.trim()) {
       throw genAppError("validation_failed", "suggestion.name is required.", 400);
     }
-    const key = (input.idempotencyKey ?? "").trim();
-    if (!key) {
-      throw genAppError("validation_failed", "idempotencyKey is required.", 400);
-    }
-
-    // 幂等：同 key 直接返回已有草稿
-    const existing = this.repository.findByIdempotencyKey(key);
-    if (existing) {
-      this.registerRuntimeContext(existing);
-      return existing;
-    }
-
-    if (
-      this.repository.countInstalled() >= GEN_APP_LIMITS.maxInstalledApps
-    ) {
-      throw genAppError(
-        "storage_quota_exceeded",
-        `Installed app limit (${GEN_APP_LIMITS.maxInstalledApps}) reached.`,
-        429,
-      );
-    }
-
-    if (this.activeGenerations >= GEN_APP_LIMITS.maxConcurrentGenerations) {
-      throw genAppError(
-        "validation_failed",
-        "Another generation is in progress.",
-        429,
-        true,
-      );
-    }
-
-    this.activeGenerations += 1;
-    try {
-      const timeoutMs = this.generateTimeoutMsFn();
-      const timeout = AbortSignal.timeout(timeoutMs);
-      const signal = AbortSignal.any
-        ? AbortSignal.any([context.signal, timeout])
-        : timeout;
-
-      const untrusted = await this.generator
-        .generate(
-          {
-            query,
-            name: suggestion.name,
-            description: suggestion.description,
-            onDelta: hooks?.onDelta,
-            onPhase: hooks?.onPhase,
-          },
-          signal,
-        )
-        .catch((error: unknown) => {
-          if (timeout.aborted) {
-            throw genAppError(
-              "generation_timeout",
-              "Generation timed out.",
-              504,
-              true,
-            );
-          }
-          throw error;
-        });
-
-      const artifact = compileArtifact(untrusted);
-      const now = this.nowFn();
-      const draft = this.repository.createDraft({
-        id: `ga-${randomUUID()}`,
-        name: suggestion.name,
-        description: suggestion.description,
-        iconEmoji: suggestion.iconEmoji,
-        iconTheme: suggestion.iconTheme,
-        category: "AI",
-        sourceQuery: query,
-        generatorProvider: untrusted.provider,
-        generatorModel: untrusted.model,
-        promptVersion: GEN_APP_PROMPT_VERSION,
-        artifact,
-        now,
-        draftTtlMs: GEN_APP_LIMITS.draftTtlMs,
-      });
-      this.repository.rememberIdempotencyKey(key, draft.summary.id);
-      this.registerRuntimeContext(draft);
-      return draft;
-    } finally {
-      this.activeGenerations -= 1;
-    }
+    const draft = await this.generation.generateDraft(input, context, hooks);
+    this.registerRuntimeContext(draft);
+    return draft;
   }
 
   /**
@@ -416,23 +274,21 @@ export class GenAppsService {
   }
 
   install(draftId: string): GenAppSummary {
-    return this.repository.install(draftId, this.nowFn());
+    return this.catalog.install(draftId);
   }
 
   list(): GenAppSummary[] {
-    // 顺带清理过期草稿
-    this.repository.discardExpiredDrafts(this.nowFn());
-    return this.repository.listInstalled();
+    return this.catalog.list();
   }
 
   launch(appId: string): GenAppLaunchBundle {
-    const bundle = this.repository.loadAndTouch(appId, this.nowFn());
+    const bundle = this.catalog.launch(appId);
     this.registerRuntimeContext(bundle);
     return bundle;
   }
 
   remove(appId: string): void {
-    this.repository.remove(appId);
+    this.catalog.remove(appId);
   }
 
   /** V2 AI 交互：服务端选择目标、模型提案、单次修复、编译并原子推进 revision。 */
