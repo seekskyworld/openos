@@ -13,8 +13,13 @@ import {
   GEN_APP_LIMITS,
   parseGenAppArtifact,
   parseGenAppSuggestion,
+  canonicalizeAppIr,
+  createAppIrCacheKey,
+  parseAppIr,
+  validateAppIr,
 } from "@openos/shared";
 import { compileArtifact, compileFragment } from "../src/gen-apps/artifact-compiler.js";
+import { compileAppIr } from "../src/gen-apps/app-ir-compiler.js";
 import { brandValidated } from "../src/gen-apps/domain.js";
 import { GenAppsService } from "../src/gen-apps/gen-apps-service.js";
 import { DeterministicFakeGenerator } from "../src/gen-apps/infrastructure/deterministic-fake-generator.js";
@@ -53,6 +58,47 @@ import {
 const context = () => ({
   requestId: "test-request",
   signal: new AbortController().signal,
+});
+
+const validAppIr = () => ({
+  protocolVersion: "openos-appir/v1" as const,
+  catalogVersion: "catalog-v1",
+  identity: { family: "tool", variant: "notes", title: "Notes" },
+  root: "root",
+  components: {
+    root: { type: "surface", children: ["title", "save"] },
+    title: { type: "text", props: { value: "Notes" } },
+    save: { type: "button", actionIds: ["save"] },
+  },
+  data: { note: "" },
+  actions: { save: { kind: "local" as const, name: "state.save" } },
+});
+
+test("AppIR validates model output and creates stable canonical cache keys", () => {
+  const value = validAppIr();
+  assert.deepEqual(validateAppIr(value), []);
+  assert.equal(parseAppIr(value)?.root, "root");
+  const reordered = { ...value, components: { save: value.components.save, root: value.components.root, title: value.components.title } };
+  assert.equal(createAppIrCacheKey(value), createAppIrCacheKey(reordered));
+  assert.deepEqual(canonicalizeAppIr(value).components, canonicalizeAppIr(reordered).components);
+});
+
+test("AppIR rejects invalid references and unsupported model actions", () => {
+  const invalid = validAppIr();
+  invalid.root = "missing root";
+  invalid.components.root.props = { script: "javascript:alert(1)" };
+  invalid.actions.save = { kind: "unsupported" as never, name: "run" };
+  const issues = validateAppIr(invalid);
+  assert.ok(issues.some((issue) => issue.path === "/root"));
+  assert.ok(issues.some((issue) => issue.path === "/actions/save"));
+});
+
+test("AppIR compiler emits V2 markup without executing model code", () => {
+  const artifact = compileAppIr(validAppIr());
+  assert.equal(artifact.provider, "openos-appir");
+  assert.match(artifact.html, /class="os-app os-column"/);
+  assert.match(artifact.html, /data-action="state\.save"/);
+  assert.doesNotMatch(artifact.html, /<script/i);
 });
 
 test("suggestions are complete without waiting for an LLM provider", async () => {

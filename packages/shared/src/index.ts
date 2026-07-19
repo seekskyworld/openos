@@ -1092,3 +1092,4 @@ export const DEFAULT_BRIDGE_PORT = 47821;
 export * from "./gen-apps.js";
 export * from "./gen-app-runtime.js";
 export * from "./gen-app-suggestions.js";
+export * from "./gen-app-ir.js";
