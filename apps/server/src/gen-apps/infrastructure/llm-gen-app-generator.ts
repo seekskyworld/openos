@@ -10,6 +10,7 @@ import {
 import { buildGeneratePrompt } from "../prompt-policy.js";
 import { buildAppIrPrompt } from "../prompt-policy.js";
 import { compileAppIr } from "../app-ir-compiler.js";
+import { AppIrStageAssembler } from "../generation/app-ir-stream.js";
 import { genAppError, type UntrustedArtifact, type UntrustedSuggestion } from "../domain.js";
 import type {
   ContinuePortInput,
@@ -165,13 +166,23 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       language: settings.appLanguage,
     });
     input.onPhase?.({ phase: "generating-appir" });
+    const assembler = new AppIrStageAssembler();
+    const emitSnapshots = (snapshots: ReturnType<AppIrStageAssembler["push"]>) => {
+      for (const snapshot of snapshots) {
+        input.onPhase?.({ phase: `appir-${snapshot.stage}` });
+        input.onSnapshot?.({ stage: snapshot.stage, markup: snapshot.markup });
+      }
+    };
+    const consumeChunk = (chunk: string) => {
+      emitSnapshots(assembler.push(chunk));
+    };
     const result = await coreGenerate(
       {
         protocol: llm.protocol,
         target: this.wireTarget(llm),
         timeoutMs: 120_000,
         signal,
-        onDelta: input.onDelta,
+        onDelta: consumeChunk,
       },
       {
         model: llm.model,
@@ -184,6 +195,12 @@ export class LlmGenAppGenerator implements GenAppGenerator {
         maxOutputTokens: 2_500,
       },
     );
+    emitSnapshots(assembler.finish());
+    const lastAppIr = assembler.latestAppIr();
+    if (lastAppIr) {
+      const artifact = compileAppIr(lastAppIr);
+      return { ...artifact, provider: llm.provider, model: result.model };
+    }
     const json = result.text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? result.text;
     let parsed: unknown;
     try {
@@ -200,7 +217,8 @@ export class LlmGenAppGenerator implements GenAppGenerator {
       }
       throw genAppError("invalid_model_output", "Model returned invalid AppIR JSON.", 422, true);
     }
-    const appIr = parseAppIr(parsed);
+    const envelope = parsed && typeof parsed === "object" && "ir" in parsed ? parsed as { ir: unknown } : null;
+    const appIr = parseAppIr(envelope?.ir ?? parsed);
     if (!appIr) throw genAppError("invalid_model_output", "Model returned an invalid AppIR.", 422, true);
     const artifact = compileAppIr(appIr);
     return { ...artifact, provider: llm.provider, model: result.model };

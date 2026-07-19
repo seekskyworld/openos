@@ -51,6 +51,7 @@ import type { WebPageProvider, WebSearchProvider } from "../src/gen-apps/ports.j
 import { InFlightGenerationRegistry } from "../src/gen-apps/generation/in-flight-generation.js";
 import { createGenerationFingerprint } from "../src/gen-apps/generation/fingerprint.js";
 import { resolveAppRecipe } from "../src/gen-apps/generation/app-recipe.js";
+import { AppIrStageAssembler } from "../src/gen-apps/generation/app-ir-stream.js";
 import {
   clampAgentMaxRounds,
   loadGenAppsSettings,
@@ -118,6 +119,32 @@ test("AppIR behavior graph runs local transitions and data patches", () => {
   assert.equal(result.activeState, "saved");
   assert.deepEqual(result.data, { note: "saved" });
   assert.deepEqual(result.effects, ["toast"]);
+});
+
+test("AppIR stage assembler emits only complete ordered atomic snapshots", () => {
+  const stages = ["surface", "core", "data", "behavior"] as const;
+  const stream = [
+    JSON.stringify({ stage: "surface", ir: validAppIr() }),
+    JSON.stringify({ stage: "core", patch: { identity: { variant: "core", title: "core" } } }),
+    JSON.stringify({ stage: "data", patch: { data: { stage: 2 } } }),
+    JSON.stringify({ stage: "behavior", patch: { behavior: { initial: "idle", states: { idle: { transitions: [] } } } } }),
+  ].join("\n");
+  const assembler = new AppIrStageAssembler();
+  const output = [
+    ...assembler.push(stream.slice(0, 37)),
+    ...assembler.push(stream.slice(37, 251)),
+    ...assembler.push(stream.slice(251)),
+    ...assembler.finish(),
+  ];
+  assert.deepEqual(output.map((snapshot) => snapshot.stage), stages);
+  assert.ok(output.every((snapshot) => snapshot.markup.includes('class="os-app os-column"')));
+  assert.equal(assembler.latestAppIr()?.identity.variant, "core");
+  assert.deepEqual(assembler.latestAppIr()?.data, { stage: 2 });
+
+  const duplicate = new AppIrStageAssembler();
+  const behaviorFirst = JSON.stringify({ stage: "behavior", ir: validAppIr() });
+  const surfaceAfter = JSON.stringify({ stage: "surface", ir: validAppIr() });
+  assert.equal(duplicate.push(`${behaviorFirst}\n${surfaceAfter}\n`).length, 1);
 });
 
 test("suggestions are complete without waiting for an LLM provider", async () => {

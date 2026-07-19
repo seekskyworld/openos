@@ -164,6 +164,7 @@ export class GenAppsController {
             context,
             {
               onDelta: (text) => emit("delta", { text }),
+              onSnapshot: (snapshot) => emit("snapshot", snapshot),
               onPhase: (phase) => emit("phase", phase),
             },
           );

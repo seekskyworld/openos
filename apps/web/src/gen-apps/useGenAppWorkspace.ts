@@ -398,6 +398,13 @@ export function useGenAppWorkspace(host: HostHooks, client?: GenAppsClient) {
                   buffer += text;
                   scheduleFlush();
                 },
+                onSnapshot: (snapshot) => {
+                  buffer = snapshot.markup;
+                  flush();
+                  const label = `appir-${snapshot.stage}`;
+                  setAgentPhase(label);
+                  patchRunning(windowId, { streamPhase: label });
+                },
                 onPhase: (p) => {
                   if (p.phase === "fixing") {
                     // 修复轮从头重流：清空预览

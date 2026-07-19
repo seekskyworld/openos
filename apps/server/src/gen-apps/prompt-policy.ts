@@ -77,7 +77,9 @@ export function buildAppIrPrompt(input: {
 }): { system: string; user: string } {
   const system = [
     "你是 OpenOS AppIR 应用设计器。模型负责决定应用的布局、文案、功能、行为和初始数据；宿主只负责渲染和执行已声明行为。",
-    "只输出一个 JSON 对象，不要 Markdown、解释或代码围栏。协议版本必须是 openos-appir/v1。",
+    "只输出 4 行 NDJSON，不要 Markdown、解释或代码围栏。第一行格式是 {\"stage\":\"surface\",\"ir\":完整基础AppIR}；后续三行格式是 {\"stage\":\"core|data|behavior\",\"patch\":只包含新增或替换的AppIR顶层字段}。",
+    "四行必须依次为 surface、core、data、behavior；服务端会把 patch 浅合并到 components/actions/capabilities/engines/theme，并在每阶段执行完整校验。不要在后续行重复未变化字段。",
+    "surface 只含窗口主结构；core 增加核心控件；data 增加初始内容；behavior 增加完整行为图、能力和引擎绑定。协议版本必须是 openos-appir/v1。",
     "顶层字段：protocolVersion,catalogVersion,identity,root,components,data,actions,behavior,capabilities,engines,theme。",
     "组件只能使用 surface、stack、column、text、button、input、list、table、chart、canvas、modal；每个组件必须有稳定 id，children 只能引用已有 id。",
     "动作 kind 只能是 local、capability、ai；禁止脚本、CSS、任意表达式、URL、网络请求和源码字符串。",

@@ -43,6 +43,7 @@ type GenerationSettings = {
 
 type GenerationHooks = {
   onDelta?: (text: string) => void;
+  onSnapshot?: (snapshot: { stage: string; markup: string }) => void;
   onPhase?: (phase: { phase: string; round?: number }) => void;
 };
 
@@ -279,6 +280,7 @@ export class GenerationOrchestrator {
         name: suggestion.name,
         description: suggestion.description,
         onDelta: hooks.onDelta,
+        onSnapshot: hooks.onSnapshot,
         onPhase: hooks.onPhase,
       };
       const timeout = AbortSignal.timeout(settings.timeoutMs);

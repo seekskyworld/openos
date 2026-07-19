@@ -1,5 +1,6 @@
 type GenerationHooks = {
   onDelta?: (text: string) => void;
+  onSnapshot?: (snapshot: { stage: string; markup: string }) => void;
   onPhase?: (phase: { phase: string; round?: number }) => void;
 };
 
@@ -36,6 +37,9 @@ export class InFlightGenerationRegistry<T> {
         void start(activeEntry.controller.signal, {
           onDelta: (text) => {
             for (const subscriber of activeEntry.subscribers) subscriber.hooks.onDelta?.(text);
+          },
+          onSnapshot: (snapshot) => {
+            for (const subscriber of activeEntry.subscribers) subscriber.hooks.onSnapshot?.(snapshot);
           },
           onPhase: (phase) => {
             for (const subscriber of activeEntry.subscribers) subscriber.hooks.onPhase?.(phase);

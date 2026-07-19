@@ -105,6 +105,7 @@ export interface GenAppsClient {
     idempotencyKey: string,
     callbacks: {
       onDelta: (text: string) => void;
+      onSnapshot?: (snapshot: { stage: string; markup: string }) => void;
       onPhase?: (phase: { phase: string; round?: number }) => void;
     },
     signal: AbortSignal,
@@ -323,6 +324,7 @@ export class HttpGenAppsClient implements GenAppsClient {
     idempotencyKey: string,
     callbacks: {
       onDelta: (text: string) => void;
+      onSnapshot?: (snapshot: { stage: string; markup: string }) => void;
       onPhase?: (phase: { phase: string; round?: number }) => void;
     },
     signal: AbortSignal,
@@ -364,6 +366,8 @@ export class HttpGenAppsClient implements GenAppsClient {
       const record = data as Record<string, unknown>;
       if (eventName === "delta" && typeof record.text === "string") {
         callbacks.onDelta(record.text);
+      } else if (eventName === "snapshot" && typeof record.stage === "string" && typeof record.markup === "string") {
+        callbacks.onSnapshot?.({ stage: record.stage, markup: record.markup });
       } else if (eventName === "phase" && typeof record.phase === "string") {
         callbacks.onPhase?.({
           phase: record.phase,

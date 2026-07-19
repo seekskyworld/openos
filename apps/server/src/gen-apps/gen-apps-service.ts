@@ -132,6 +132,7 @@ export class GenAppsService {
     context: RequestContext,
     hooks?: {
       onDelta?: (text: string) => void;
+      onSnapshot?: (snapshot: { stage: string; markup: string }) => void;
       onPhase?: (phase: { phase: string; round?: number }) => void;
     },
   ): Promise<GenAppDraft> {
