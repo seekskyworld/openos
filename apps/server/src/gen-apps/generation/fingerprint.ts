@@ -8,6 +8,8 @@ import {
   type GenAppSuggestion,
 } from "@openos/shared";
 
+const GEN_APP_BLUEPRINT_VERSION = 2;
+
 export type GenerationFingerprintInput = {
   query: string;
   suggestion: GenAppSuggestion;
@@ -43,6 +45,7 @@ export function createGenerationFingerprint(input: GenerationFingerprintInput): 
     policyVersion: GEN_APP_POLICY_VERSION,
     runtimeVersion: GEN_APP_RUNTIME_VERSION,
     uiKitVersion: GEN_APP_UI_KIT_VERSION,
+    blueprintVersion: GEN_APP_BLUEPRINT_VERSION,
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }

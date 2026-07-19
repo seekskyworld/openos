@@ -289,6 +289,8 @@ test("generation orchestrator composes blueprints, deduplicates misses, and reus
     );
     assert.equal(blueprintGenerateCalls, 0);
     assert(blueprintDraft.artifact.markup?.includes('data-action="list.add"'));
+    assert(!blueprintDraft.artifact.markup?.includes("AI 更新"));
+    assert(!blueprintDraft.artifact.markup?.includes("AI update"));
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });

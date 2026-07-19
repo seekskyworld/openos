@@ -99,9 +99,7 @@ function composeMarkup(input: BlueprintInput, intentKey: string): string {
   return `<main class="os-app os-column">
     <header class="os-toolbar" id="app-header"><strong class="os-toolbar-title">${title}</strong><span class="os-badge">${status}</span></header>
     <section class="os-main os-fill" id="app-panel">
-      <div class="os-card os-column" id="app-card"><p id="app-description" class="os-caption">${description}</p>${panel}
-        <button id="ai-explain" class="os-button" type="button" data-action="ai.patch" data-target="app-panel">${isEnglish ? "AI update" : "AI 更新"}</button>
-      </div>
+      <div class="os-card os-column" id="app-card"><p id="app-description" class="os-caption">${description}</p>${panel}</div>
     </section>
   </main>`;
 }
