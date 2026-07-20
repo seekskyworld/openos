@@ -80,7 +80,7 @@ const root = new URL("..", import.meta.url).pathname;
 const port = await freePort();
 const base = `http://127.0.0.1:${port}/api`;
 const dataDir = mkdtempSync(join(tmpdir(), "openos-genapps-v2-smoke-"));
-const child = spawn("node", ["apps/server/dist/cli.js"], {
+const child = spawn("node", ["server/dist/cli.js"], {
   cwd: root,
   env: {
     ...process.env,

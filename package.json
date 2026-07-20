@@ -6,10 +6,12 @@
   "description": "OpenOS — Generate Everything, Create Infinite. AI desktop OS shell that generates apps on demand (Electron + TypeScript).",
   "author": "OpenOS Contributors",
   "license": "MIT",
-  "main": "apps/desktop/dist/main.cjs",
+  "main": "desktop/dist/main.cjs",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "desktop",
+    "server",
+    "web",
+    "packages/*"
   ],
   "scripts": {
     "dev": "npm run desktop:dev",
@@ -54,9 +56,9 @@
     "files": [
       "package.json",
       "LICENSE",
-      "apps/desktop/dist/**/*",
-      "!apps/desktop/dist/**/*.map",
-      "apps/web/dist/**/*"
+      "desktop/dist/**/*",
+      "!desktop/dist/**/*.map",
+      "web/dist/**/*"
     ],
     "mac": {
       "category": "public.app-category.productivity",

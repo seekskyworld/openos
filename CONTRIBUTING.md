@@ -21,22 +21,22 @@ npm run dev:web-stack  # 后端 + Vite dev server，浏览器打开 http://127.0
 
 | 路径 | 内容 |
 | --- | --- |
-| `apps/web/src/window/` | 窗口系统（`DesktopWindow` + `useWindowManager`） |
-| `apps/web/src/launcher/` | 启动台与 Gen Apps 前端工作流 |
-| `apps/server/src/llm-core/` | 内部协议层与厂商 wire 适配器 |
-| `apps/server/src/agent-core/` | 任务无关的 agent 循环内核 |
-| `apps/server/src/gen-apps/` | 生成应用服务 / 校验 / 编译 / 仓储 |
+| `web/src/window/` | 窗口系统（`DesktopWindow` + `useWindowManager`） |
+| `web/src/launcher/` | 启动台与 Gen Apps 前端工作流 |
+| `server/src/llm-core/` | 内部协议层与厂商 wire 适配器 |
+| `server/src/agent-core/` | 任务无关的 agent 循环内核 |
+| `server/src/gen-apps/` | 生成应用服务 / 校验 / 编译 / 仓储 |
 | `packages/shared/` | 前后端共享类型与线协议 schema |
 | `docs/` | 架构与实施文档 |
 
 ## 提交 PR 前
 
 1. `npm run typecheck` 与 `npm run build` 全部通过；
-2. 后端改动跑一遍相关冒烟脚本（`apps/server/scripts/`），如
-   `npx tsx apps/server/scripts/smoke-agent-core-run.ts`；
+2. 后端改动跑一遍相关冒烟脚本（`server/scripts/`），如
+   `npx tsx server/scripts/smoke-agent-core-run.ts`；
 3. UI 改动同时检查浅色与深色主题——颜色一律使用主题变量
    （`--surface-*` / `--ink-*` / `--line-*`），不要硬编码色值；
-4. 文案改动同步 `apps/web/src/i18n/` 的 zh-CN 与 en-US 两份词条；
+4. 文案改动同步 `web/src/i18n/` 的 zh-CN 与 en-US 两份词条；
 5. 涉及生成应用安全面（ArtifactCompiler / ArtifactValidator / iframe 沙箱策略 / CSP）
    的改动，请在 PR 描述中说明威胁模型影响并附冒烟结果。
 

@@ -5,7 +5,7 @@ const root = new URL("..", import.meta.url).pathname;
 const port = 47821;
 const base = `http://127.0.0.1:${port}/api`;
 
-const child = spawn("node", ["apps/server/dist/cli.js"], {
+const child = spawn("node", ["server/dist/cli.js"], {
   cwd: root,
   env: {
     ...process.env,

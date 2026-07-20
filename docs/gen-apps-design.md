@@ -156,7 +156,7 @@ draft -> running-draft -> installing -> installed -> running-installed
 ## 3. 总体分层
 
 ```text
-apps/web
+web
   Presentation
     AppLauncher / GenAppRunner / Settings
         |
@@ -172,7 +172,7 @@ apps/web
 packages/shared
   版本化 DTO/schema/error code + 浏览器安全的运行时与候选策略
 
-apps/server
+server
   HTTP Controller adapter
         |
         v
@@ -284,11 +284,11 @@ packages/shared/src/gen-apps.ts
 packages/shared/src/gen-app-suggestions.ts
   浏览器与 Bridge 共用的确定性候选策略
 
-apps/server/src/database/
+server/src/database/
   openos-database.ts
   migrations.ts
 
-apps/server/src/gen-apps/
+server/src/gen-apps/
   domain.ts
   gen-apps-service.ts
   ports.ts
@@ -366,7 +366,7 @@ HTTP 状态明确映射到 400 / 404 / 409 / 413 / 422 / 429 / 502 / 503 / 504�
 | --- | --- |
 | Electron dev | `~/Library/Application Support/OpenOS Dev/data/chat.sqlite` |
 | Electron stable | `~/Library/Application Support/OpenOS/data/chat.sqlite` |
-| 浏览器开发态 | Server cwd 下 `.openos/chat.sqlite`，当前通常为 `<repo>/apps/server/.openos/chat.sqlite` |
+| 浏览器开发态 | Server cwd 下 `.openos/chat.sqlite`，当前通常为 `<repo>/server/.openos/chat.sqlite` |
 
 浏览器本身不直接持有 SQLite，始终通过本机 Bridge 访问。
 
@@ -695,15 +695,15 @@ type LauncherItem =
 | 位置 | 内容 |
 | --- | --- |
 | `packages/shared/src/gen-apps.ts` | DTO、schema、错误码、版本 |
-| `apps/server/src/database/*` | 通用 SQLite 生命周期与 migration |
-| `apps/server/src/gen-apps/*` | 领域、应用服务、端口、Controller、Adapter、Compiler |
-| `apps/server/src/create-server.ts` | 组合并委托 GenAppsController；补齐 CORS/错误映射 |
-| `apps/server/src/settings-store.ts` | version 2、原子 merge、Gen Apps 独立设置 |
-| `apps/web/src/gen-apps/*` | Client Adapter、Workspace、Runner、能力桥 |
-| `apps/web/src/window/*` | 动态注册、关闭拦截、动态 meta |
-| `apps/web/src/launcher/AppLauncher.tsx` | 受控搜索与判别联合展示 |
-| `apps/web/src/App.tsx` | 动态应用注册表与统一渲染入口 |
-| `apps/web/src/api.ts` | AbortSignal、结构化 Client Error；逐步拆出 feature client |
+| `server/src/database/*` | 通用 SQLite 生命周期与 migration |
+| `server/src/gen-apps/*` | 领域、应用服务、端口、Controller、Adapter、Compiler |
+| `server/src/create-server.ts` | 组合并委托 GenAppsController；补齐 CORS/错误映射 |
+| `server/src/settings-store.ts` | version 2、原子 merge、Gen Apps 独立设置 |
+| `web/src/gen-apps/*` | Client Adapter、Workspace、Runner、能力桥 |
+| `web/src/window/*` | 动态注册、关闭拦截、动态 meta |
+| `web/src/launcher/AppLauncher.tsx` | 受控搜索与判别联合展示 |
+| `web/src/App.tsx` | 动态应用注册表与统一渲染入口 |
+| `web/src/api.ts` | AbortSignal、结构化 Client Error；逐步拆出 feature client |
 | Electron main/preload | 强隔离 Runtime、权限/导航/网络拒绝策略 |
 | i18n / styles | 状态、错误、安装重试、删除与生成视觉反馈 |
 | tests | 模块、SQLite、HTTP、安全及双端 E2E |

@@ -46,9 +46,9 @@
 ## 🏗 架构
 
 ```text
-apps/desktop      Electron 主进程 / preload / Bridge supervisor
-apps/web          React 桌面 UI（窗口系统 / 启动台 / Sir / 设置 / 通知中心）
-apps/server       本地 Bridge（loopback HTTP）
+desktop      Electron 主进程 / preload / Bridge supervisor
+web          React 桌面 UI（窗口系统 / 启动台 / Sir / 设置 / 通知中心）
+server       本地 Bridge（loopback HTTP）
   ├─ llm-core     内部协议 → 各厂商 wire 协议适配 + 回退链
   ├─ agent-core   任务无关的 coding-agent 循环内核（AgentTask<T> 注入）
   ├─ gen-apps     生成应用：Service / Repository / ArtifactCompiler / Validator
@@ -133,7 +133,7 @@ npm run desktop:dist          # 生成当前平台的安装包到 release/
 ```bash
 npm run typecheck        # 全部 workspace 类型检查
 npm run build            # shared → server → web → desktop
-npx tsx apps/server/scripts/smoke-agent-core-run.ts   # agent 内核冒烟（5 路径）
+npx tsx server/scripts/smoke-agent-core-run.ts   # agent 内核冒烟（5 路径）
 OPENOS_GENAPPS_FAKE=1 npm run dev:server              # 无模型开发（确定性 fake 生成器）
 ```
 

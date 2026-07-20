@@ -13,13 +13,13 @@ const useWebDevServer = process.argv.includes("--web-dev");
 let webDevUrl = process.env.OPENOS_WEB_DEV_URL || "http://127.0.0.1:5178";
 
 // 静态开发模式需要 web dist；热开发模式由 Vite 提供页面。
-const webIndex = join(root, "apps/web/dist/index.html");
+const webIndex = join(root, "web/dist/index.html");
 if (!useWebDevServer && !existsSync(webIndex)) {
-  console.error("[openos] missing apps/web/dist. Run: npm run build:web");
+  console.error("[openos] missing web/dist. Run: npm run build:web");
   process.exit(1);
 }
 
-const mainEntry = join(root, "apps/desktop/dist/main.cjs");
+const mainEntry = join(root, "desktop/dist/main.cjs");
 if (!existsSync(mainEntry)) {
   console.error("[openos] missing desktop dist. Run: npm run build:desktop");
   process.exit(1);
@@ -36,7 +36,7 @@ if (useWebDevServer) {
   webChild = spawn(process.execPath, [
     viteEntry,
     "--config",
-    join(root, "apps/web/vite.config.ts"),
+    join(root, "web/vite.config.ts"),
     "--host",
     requestedUrl.hostname,
     "--port",

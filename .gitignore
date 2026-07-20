@@ -12,7 +12,7 @@ web-dist/
 .openos/
 .golutra/
 reference-images/
-apps/desktop/dist/
-apps/server/dist/
-apps/web/dist/
+desktop/dist/
+server/dist/
+web/dist/
 packages/shared/dist/

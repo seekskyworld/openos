@@ -88,7 +88,7 @@ app.on("before-quit", async (event) => {
 });
 
 function createWindow(info: BridgeRuntimeInfo) {
-  // CJS 打包后 __dirname 指向 apps/desktop/dist
+  // CJS 打包后 __dirname 指向 desktop/dist
   const preloadPath = join(__dirname, "preload.cjs");
   const options: BrowserWindowConstructorOptions = {
     show: process.env.OPENOS_DESKTOP_SMOKE !== "1",
@@ -119,7 +119,7 @@ function createWindow(info: BridgeRuntimeInfo) {
     return { action: "deny" };
   });
 
-  const webDistIndex = join(resolveAppRoot(), "apps/web/dist/index.html");
+  const webDistIndex = join(resolveAppRoot(), "web/dist/index.html");
   const devServerUrl = process.env.OPENOS_WEB_DEV_URL?.trim();
 
   if (!app.isPackaged && devServerUrl) {

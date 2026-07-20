@@ -12,7 +12,7 @@
 ### 1.1 新增文件
 
 ```text
-apps/server/src/gen-apps/artifact-validator.ts
+server/src/gen-apps/artifact-validator.ts
 ```
 
 内容要点：
@@ -30,7 +30,7 @@ apps/server/src/gen-apps/artifact-validator.ts
   - 带 `fetch(` 字面量 → `external_resource` fatal
   - 用 localStorage → `uses_localstorage` warning
   - 正常计算器 fixture → 空数组
-- `npx tsc -p apps/server/tsconfig.json` 通过
+- `npx tsc -p server/tsconfig.json` 通过
 
 ### 1.3 回退
 
@@ -43,8 +43,8 @@ apps/server/src/gen-apps/artifact-validator.ts
 ### 2.1 新增文件
 
 ```text
-apps/server/src/gen-apps/agent/agent-loop.ts        # 循环本体（纯逻辑）
-apps/server/src/gen-apps/agent/agentic-generator.ts # GenAppGenerator adapter
+server/src/gen-apps/agent/agent-loop.ts        # 循环本体（纯逻辑）
+server/src/gen-apps/agent/agentic-generator.ts # GenAppGenerator adapter
 ```
 
 ### 2.2 agent-loop.ts 要点

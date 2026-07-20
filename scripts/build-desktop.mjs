@@ -4,14 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const outdir = join(root, "apps/desktop/dist");
+const outdir = join(root, "desktop/dist");
 mkdirSync(outdir, { recursive: true });
 
 await esbuild.build({
   entryPoints: {
-    main: join(root, "apps/desktop/src/main.ts"),
-    preload: join(root, "apps/desktop/src/preload.ts"),
-    bridge: join(root, "apps/server/src/cli.ts"),
+    main: join(root, "desktop/src/main.ts"),
+    preload: join(root, "desktop/src/preload.ts"),
+    bridge: join(root, "server/src/cli.ts"),
   },
   outdir,
   bundle: true,
@@ -24,4 +24,4 @@ await esbuild.build({
   logLevel: "info",
 });
 
-console.log("[openos] desktop build -> apps/desktop/dist");
+console.log("[openos] desktop build -> desktop/dist");

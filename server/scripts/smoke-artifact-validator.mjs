@@ -1,6 +1,6 @@
 /**
  * 阶段一冒烟：ArtifactValidator V1–V9 关键路径
- * 运行：node apps/server/scripts/smoke-artifact-validator.mjs
+ * 运行：node server/scripts/smoke-artifact-validator.mjs
  * （需先 tsc 或用 tsx 直接跑 ts 版；此处用动态 import dist）
  */
 import { createRequire } from "node:module";

@@ -119,9 +119,9 @@ function canListen(host: string, port: number): Promise<boolean> {
 
 function resolveServerEntry(appRoot: string): string {
   const candidates = [
-    join(appRoot, "apps/desktop/dist/bridge.cjs"),
-    join(appRoot, "apps/server/dist/cli.js"),
-    join(appRoot, "apps/server/src/cli.ts"),
+    join(appRoot, "desktop/dist/bridge.cjs"),
+    join(appRoot, "server/dist/cli.js"),
+    join(appRoot, "server/src/cli.ts"),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
