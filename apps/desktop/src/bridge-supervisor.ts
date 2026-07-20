@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from "node:fs";
-import { join } from "node:path";
+import { createServer } from "node:net";
+import { dirname, join } from "node:path";
 import { DEFAULT_BRIDGE_HOST, DEFAULT_BRIDGE_PORT } from "@openos/shared";
 
 export type BridgeRuntimeInfo = {
@@ -46,19 +47,26 @@ export class BridgeSupervisor {
     const logPath = join(logDir, "bridge.log");
     this.logStream = createWriteStream(logPath, { flags: "a" });
 
+    const bridgePort = await findAvailablePort(DEFAULT_BRIDGE_HOST, DEFAULT_BRIDGE_PORT);
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
       OPENOS_CHANNEL: channel,
       OPENOS_DATA_DIR: dataDir,
       OPENOS_BRIDGE_HOST: DEFAULT_BRIDGE_HOST,
-      OPENOS_BRIDGE_PORT: String(DEFAULT_BRIDGE_PORT),
+      OPENOS_BRIDGE_PORT: String(bridgePort),
       OPENOS_BRIDGE_TOKEN: token,
       OPENOS_BRIDGE_ALLOW_UNAUTHENTICATED: token ? "" : "1",
     };
 
-    // 始终用系统 node 启动 bridge，避免 Electron 可执行文件路径混淆
-    const child = spawn("node", [serverEntry], {
-      cwd: appRoot,
+    const executable = this.options.isPackaged ? process.execPath : "node";
+    if (this.options.isPackaged) {
+      // 安装包不能假设用户装有 Node；Electron 的 Node 模式负责运行内置 bridge。
+      env.ELECTRON_RUN_AS_NODE = "1";
+    }
+
+    const child = spawn(executable, [serverEntry], {
+      // app.asar 不是系统目录，不能作为 child_process 的 cwd。
+      cwd: this.options.isPackaged ? userDataDir : appRoot,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -90,15 +98,37 @@ export class BridgeSupervisor {
   }
 }
 
+async function findAvailablePort(host: string, preferredPort: number): Promise<number> {
+  for (let offset = 0; offset < 20; offset += 1) {
+    const port = preferredPort + offset;
+    if (await canListen(host, port)) return port;
+  }
+  throw new Error(`No available bridge port in ${preferredPort}-${preferredPort + 19}.`);
+}
+
+function canListen(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.unref();
+    probe.once("error", () => resolve(false));
+    probe.listen(port, host, () => {
+      probe.close(() => resolve(true));
+    });
+  });
+}
+
 function resolveServerEntry(appRoot: string): string {
   const candidates = [
+    join(appRoot, "apps/desktop/dist/bridge.cjs"),
     join(appRoot, "apps/server/dist/cli.js"),
     join(appRoot, "apps/server/src/cli.ts"),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error("Server entry not found. Run build:server first.");
+  throw new Error(
+    `Server entry not found below ${dirname(appRoot)}. Run build:desktop first.`,
+  );
 }
 
 function waitForReady(

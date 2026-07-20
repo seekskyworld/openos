@@ -44,9 +44,22 @@ npm run dev:web      # 前端 Vite  :5178
 npm run desktop:dev
 ```
 
-- 先 build shared/server/desktop，再由主进程托管 Bridge 并打开桌面窗口
-- **不经浏览器 5178**；密钥/授权写入系统用户目录
-  - macOS：`~/Library/Application Support/OpenOS Dev/data/`（打包版为 `OpenOS`）
+- 先 build shared/desktop，再启动 Vite 热更新服务，由主进程托管内置 Bridge 并打开桌面窗口
+- Vite 默认使用 5178，端口占用时自动向后选择；Bridge 同样会从 47821 起选择空闲端口
+- macOS：`~/Library/Application Support/OpenOS Dev/data/`（打包版为 `OpenOS`）
+
+生产静态资源联调与打包验收：
+
+```bash
+npm run desktop:dev:static
+npm run desktop:pack
+npm run smoke:desktop-package
+npm run desktop:dist
+```
+
+- `desktop:pack` 产出当前平台未压缩应用目录，便于快速验证。
+- `desktop:dist` 产出安装包到 `release/`；本地默认不签名，正式发布需在 CI 配置签名/公证。
+- 打包后的 Bridge 由 Electron 自带 Node 运行，不依赖系统安装 Node.js。
 
 ## 构建
 
@@ -68,7 +81,7 @@ npm run typecheck      # 全量类型检查
 
 1. **dev server 没在跑**（最常见）：`lsof -ti:5178` 为空即未启动 → 运行 `npm run dev:web-stack`。
 2. **只跑了后端**：`dev:server` 不含前端 → 需再跑 `dev:web` 或直接用 `dev:web-stack`。
-3. **用的是桌面模式**：`desktop:dev` 打开的是 Electron 窗口，不监听 5178。
+3. **用的是桌面模式**：`desktop:dev` 会自行启动一个 Vite 端口，但应直接使用 Electron 窗口。
 4. **端口被占用**：`lsof -ti:5178 | xargs kill -9` 释放后重启。
 5. **后端未起导致 /api 502**：确认 47821 已监听（`curl 127.0.0.1:47821/api/health`）。
 

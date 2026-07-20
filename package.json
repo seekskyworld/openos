@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "OpenOS — Generate Everything, Create Infinite. AI desktop OS shell that generates apps on demand (Electron + TypeScript).",
+  "author": "OpenOS Contributors",
   "license": "MIT",
   "main": "apps/desktop/dist/main.cjs",
   "workspaces": [
@@ -20,7 +21,11 @@
     "build:server": "npm run build -w @openos/server",
     "build:web": "npm run build -w @openos/web",
     "build:desktop": "npm run build -w @openos/desktop",
-    "desktop:dev": "npm run build:shared && npm run build:server && npm run build:desktop && node scripts/launch-desktop-dev.mjs",
+    "desktop:dev": "npm run build:shared && npm run build:desktop && node scripts/launch-desktop-dev.mjs --web-dev",
+    "desktop:dev:static": "npm run build && node scripts/launch-desktop-dev.mjs",
+    "desktop:pack": "npm run build && node scripts/package-desktop.mjs --dir",
+    "desktop:dist": "npm run build && node scripts/package-desktop.mjs",
+    "smoke:desktop-package": "node scripts/smoke-desktop-package.mjs",
     "start:server": "npm run start -w @openos/server",
     "presmoke:genapps-v2": "npm run build -w @openos/shared && npm run build -w @openos/server",
     "smoke:genapps-v2": "node scripts/smoke-gen-apps-v2.mjs",
@@ -35,7 +40,51 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "electron": "^37.3.1",
+    "electron": "^39.8.5",
+    "electron-builder": "^26.0.12",
     "typescript": "^5.9.2"
+  },
+  "build": {
+    "appId": "com.openos.desktop",
+    "productName": "OpenOS",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "package.json",
+      "LICENSE",
+      "apps/desktop/dist/**/*",
+      "!apps/desktop/dist/**/*.map",
+      "apps/web/dist/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/logo.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "category": "Utility",
+      "icon": "assets/logo.png",
+      "target": [
+        "AppImage"
+      ]
+    },
+    "win": {
+      "icon": "assets/logo.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+  },
+  "allowScripts": {
+    "electron@39.8.10": true
   }
 }

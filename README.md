@@ -81,6 +81,21 @@ npm run dev:web-stack
 npm run desktop:dev
 ```
 
+`desktop:dev` 会自动构建主进程和内置 Bridge、启动 Vite 热更新服务并拉起 Electron；
+若 5178 已占用，会自动使用后续空闲端口。使用生产静态资源联调可运行
+`npm run desktop:dev:static`。
+
+桌面打包：
+
+```bash
+npm run desktop:pack          # 生成当前平台的未压缩应用目录，适合快速验收
+npm run smoke:desktop-package # 启动打包应用，验证内置 Bridge 和渲染页
+npm run desktop:dist          # 生成当前平台的安装包到 release/
+```
+
+安装包内置 Bridge 和运行时，不依赖用户预装 Node.js。当前本地构建默认不签名；
+正式分发时应在 CI 中配置对应平台的签名与公证凭据。
+
 首次使用：打开 **系统设置 → Providers** 连接一个模型提供商（OAuth 或 API Key），
 然后在 Dock 点 **App** 打开启动台，搜索任意关键词（如「计算器」）体验 AI 生成应用。
 

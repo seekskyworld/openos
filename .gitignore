@@ -1,6 +1,7 @@
 node_modules/
 dist/
 desktop-dist/
+release/
 web-dist/
 .server-dist/
 .env
