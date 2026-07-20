@@ -10,6 +10,10 @@ if (!root) {
   throw new Error("Root element #root not found");
 }
 
+if (window.openosDesktop?.platform === "darwin") {
+  document.documentElement.classList.add("desktop-platform-darwin");
+}
+
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>

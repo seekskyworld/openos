@@ -345,6 +345,11 @@ select,
   -webkit-app-region: drag;
 }
 
+/* Electron hiddenInset 的原生窗口按钮占据左上角，菜单从按钮右侧开始。 */
+.desktop-platform-darwin .menubar {
+  padding-left: 78px;
+}
+
 .menubar-left,
 .menubar-right {
   display: flex;
