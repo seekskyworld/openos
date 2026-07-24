@@ -51,3 +51,6 @@ npm run dev:web-stack  # 后端 + Vite dev server，浏览器打开 http://127.0
 
 提 Issue 时请附：复现步骤、期望/实际行为、运行方式（浏览器 / Electron）、
 Node 版本，以及（若与生成相关）所用提供商与模型。
+
+安全漏洞不要提交公开 Issue，请遵循 [SECURITY.md](SECURITY.md) 的私密报告流程。
+参与项目即表示同意遵守 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。

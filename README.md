@@ -149,6 +149,10 @@ OPENOS_GENAPPS_FAKE=1 npm run dev:server              # 无模型开发（确定
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+社区协作遵循 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。安全漏洞请按
+[SECURITY.md](SECURITY.md) 私密报告，不要创建公开 Issue。第三方依赖许可说明见
+[docs/third-party-licenses.md](docs/third-party-licenses.md)。
+
 ## 📄 License
 
 [MIT](LICENSE)
