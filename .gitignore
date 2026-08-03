@@ -9,6 +9,7 @@ web-dist/
 .DS_Store
 .cache/
 *.log
+*.tsbuildinfo
 .openos/
 .golutra/
 reference-images/
