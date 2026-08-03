@@ -49,10 +49,10 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "electron": "^39.8.5",
+    "concurrently": "^10.0.4",
+    "electron": "^43.2.0",
     "electron-builder": "^26.0.12",
-    "typescript": "^5.9.2"
+    "typescript": "^7.0.2"
   },
   "build": {
     "appId": "com.openos.desktop",
