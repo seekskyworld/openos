@@ -6,6 +6,14 @@
   "description": "OpenOS — Generate Everything, Create Infinite. AI desktop OS shell that generates apps on demand (Electron + TypeScript).",
   "author": "OpenOS Contributors",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seekskyworld/openos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seekskyworld/openos/issues"
+  },
+  "homepage": "https://github.com/seekskyworld/openos#readme",
   "main": "desktop/dist/main.cjs",
   "workspaces": [
     "desktop",

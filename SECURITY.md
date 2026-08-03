@@ -4,7 +4,7 @@
 
 ## 报告方式
 
-仓库发布到 GitHub 后，请使用仓库的 **Security -> Report a vulnerability** 私密报告入口提交漏洞。报告入口启用前，可联系项目维护者取得私密渠道；不要把密钥、个人数据或可直接利用的完整 PoC 粘贴到公开区域。
+请使用仓库的 [Private Vulnerability Reporting](https://github.com/seekskyworld/openos/security/advisories/new) 私密入口提交漏洞。若该入口暂时不可用，请联系项目维护者取得私密渠道；不要把密钥、个人数据或可直接利用的完整 PoC 粘贴到公开区域。
 
 报告应尽量包含：
 

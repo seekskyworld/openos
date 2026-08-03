@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/seekskyworld/openos/actions/workflows/ci.yml"><img src="https://github.com/seekskyworld/openos/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-3da639" alt="Apache License 2.0" /></a>
   <img src="https://img.shields.io/badge/platform-Web%20%7C%20macOS-2f7af8" alt="Web and macOS" />
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" /></a>
@@ -116,7 +117,7 @@ packages/shared   前后端共享类型、线协议 schema、错误码
 要求：Node.js ≥ 22（SQLite 使用内置 `node:sqlite`）
 
 ```bash
-git clone <repo-url> && cd openos
+git clone https://github.com/seekskyworld/openos.git && cd openos
 cp .env.example .env        # 可选：预填 LLM Key（也可稍后在设置界面配置）
 npm install
 npm run build
