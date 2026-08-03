@@ -4,9 +4,7 @@
 
 ## 关联 Issue
 
-<!-- 必填：完整解决使用 Closes/Fixes #编号；部分关联使用 Refs #编号。 -->
-
-Closes #
+<!-- 有对应 Issue 时填写 Closes/Fixes/Refs #编号；没有时填写“无”并简述原因。 -->
 
 ## 架构与文档
 

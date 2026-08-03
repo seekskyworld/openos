@@ -36,7 +36,7 @@ npm run dev:web-stack  # 后端 + Vite dev server，浏览器打开 http://127.0
 
 ## 提交 PR 前
 
-1. PR 使用 `Closes #编号` / `Fixes #编号` / `Refs #编号` 关联真实 Issue；
+1. 有对应 Issue 时使用 `Closes #编号` / `Fixes #编号` / `Refs #编号` 关联；没有时在 PR 中简述原因；
 2. 代码与对应架构、接口或用户文档在同一个 PR 中同步更新；
 3. `npm run typecheck` 与 `npm run build` 全部通过；
 4. 后端改动跑一遍相关冒烟脚本（`server/scripts/`），如
