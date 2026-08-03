@@ -1,15 +1,34 @@
 <p align="center">
-  <img src="assets/logo.png" alt="OpenOS logo" width="160" />
+  <img src="assets/logo.png" alt="OpenOS logo" width="140" />
 </p>
 
 <h1 align="center">OpenOS</h1>
 
-<p align="center"><b>Generate Everything, Create Infinite.</b></p>
+<p align="center">
+  <b>Generate Everything, Create Infinite.</b><br />
+  让想法直接成为正在运行的应用。
+</p>
 
 <p align="center">
-  一个「AI 生成应用」的桌面操作系统 —— macOS 风格的 Web/Electron 桌面壳，
-  内置 Siri 风格助手 <b>Sir</b>，在启动台里搜索即可让大模型为你<b>现场生成可用的应用</b>，
-  关闭即安装、下次秒开。
+  一个面向实时生成应用的 AI 桌面操作系统。<br />
+  在启动台描述需求，让大模型现场生成可运行、可交互、可持续更新的应用；<br />
+  关闭即安装，再次打开直接恢复。
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-3da639" alt="Apache License 2.0" /></a>
+  <img src="https://img.shields.io/badge/platform-Web%20%7C%20macOS-2f7af8" alt="Web and macOS" />
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" /></a>
+  <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-39-47848f?logo=electron&logoColor=white" alt="Electron 39" /></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=111" alt="React 19" /></a>
+</p>
+
+<p align="center">
+  <a href="#vision">开源愿景</a> ·
+  <a href="#features">核心特性</a> ·
+  <a href="#architecture">架构</a> ·
+  <a href="#quick-start">快速开始</a> ·
+  <a href="#contributing">参与贡献</a>
 </p>
 
 <p align="center">
@@ -17,6 +36,31 @@
 </p>
 
 ---
+
+<a id="vision"></a>
+
+## 🌌 开源愿景：让应用在模型输出时就开始运行
+
+大模型正在进入高速 Token 输出时代，但传统 AI 编程链路仍然要求模型先生成完整项目、安装依赖、编译，再把结果交给用户。模型越快，后面的工程等待越显得笨重。
+
+OpenOS 想探索另一条开源路线：**不等待完整应用一次性交付，而是让生成过程本身成为应用的启动过程。** 模型先返回最小可运行界面，宿主立即渲染；随后以闭合、可校验的 HTML 阶段持续补齐内容与交互。通用样式、安全边界、窗口能力和可信行为由本地运行时提供，模型只生成真正属于这个应用的部分。
+
+这条路线会分阶段推进：
+
+| 阶段 | 用户体验 | 核心机制 |
+| --- | --- | --- |
+| 已知应用秒开 | 常见应用和历史生成结果即时出现 | 成品缓存、语义缓存、`AppRecipe`、可信本地引擎 |
+| 冷生成快速首屏 | 模型尚未输出完，窗口已经可见 | `shell -> core -> content -> actions` 原子渐进 HTML、流式快照 |
+| 生成即交互 | 页面补齐过程中即可点击、输入和运行 | 宿主 UI Kit、本地 Action Runtime、按需最小更新 |
+| 高速模型实时应用 | 充分利用各厂商更高的 Token 速率 | 协议适配、流控、并发生成、增量校验与即时提交 |
+
+“秒开”不应该只是先展示一个空壳来掩盖等待，而应该意味着：首个有用界面尽早出现，已经生成的部分立即可用，后续内容稳定地原地补齐。随着模型推理和输出速度继续提升，自然语言到可运行应用的距离会不断缩短，直到应用可以按想法实时出现。
+
+最终，OpenOS 不只是一个固定应用集合，而是一套开放的生成式应用运行时：工具、内容、游戏、数据界面，乃至今天还没有名字的软件形态，都可以被现场组合出来。**一切皆有可能。**
+
+---
+
+<a id="features"></a>
 
 ## ✨ 特性
 
@@ -43,6 +87,8 @@
 - 十余家提供商一键连接（OAuth / API Key），自定义端点支持多协议、多鉴权与真实模型列表拉取
 - 未配置密钥时自动走本地 mock / fake 生成器，纯前端开发不依赖任何模型
 
+<a id="architecture"></a>
+
 ## 🏗 架构
 
 ```text
@@ -62,6 +108,8 @@ packages/shared   前后端共享类型、线协议 schema、错误码
 - **agent-core 与任务解耦**：循环内核只懂「生成 → 校验 → 喂回 → 修复」，HTML 应用只是一个 `AgentTask<string>` 实现——接入新的生成任务（SQL、图表、脚本…）只需再写一个任务包
 - **安全**：生成代码经 ArtifactCompiler 重建外壳并注入 CSP，运行于 `sandbox="allow-scripts"` iframe；密钥只存在服务端，renderer 无 Node 权限
 - **双端一致**：浏览器走 Vite 代理 `/api`，Electron 走 preload 注入的 apiBase + token，同一套 UI 与接口；dev / stable 通道数据隔离
+
+<a id="quick-start"></a>
 
 ## 🚀 快速开始
 
@@ -138,6 +186,8 @@ OPENOS_GENAPPS_FAKE=1 npm run dev:server              # 无模型开发（确定
 ```
 
 设计文档见 [`docs/`](docs/)：Gen Apps 架构、Coding Agent 架构与实施文档。
+
+<a id="contributing"></a>
 
 ## 🤝 贡献
 
