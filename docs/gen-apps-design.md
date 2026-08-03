@@ -370,6 +370,18 @@ HTTP 状态明确映射到 400 / 404 / 409 / 413 / 422 / 429 / 502 / 503 / 504�
 
 浏览器本身不直接持有 SQLite，始终通过本机 Bridge 访问。
 
+Web 发布包保持相同边界，但增加一个只负责部署的组合层：`WebReleaseHost` 托管编译后的
+React 静态文件，并把同源 `/api` 流式转发到仅监听 `127.0.0.1` 的内置 Bridge。浏览器
+仍不获得 Node.js、数据库或 Bridge 进程权限，Bridge 也不直接暴露给网络。发布包默认把
+持久化数据放在包内 `data/`，可用 `OPENOS_DATA_DIR` 显式迁移到其他目录；升级前复制该目录，
+回滚时启动上一版本制品并恢复对应备份即可。
+
+该部署形态仍属于本机可信单用户模式，不改变“无多用户云部署”的非目标。Web Host 默认
+拒绝非回环监听；只有显式设置 `OPENOS_WEB_ALLOW_REMOTE=1` 才能放开，并要求外部提供带
+身份认证的 TLS 网关。Bridge 启动失败时 Host 不开放端口；运行中 Bridge 退出时 Host 同步
+停止；代理连接失败返回带 request ID 的 `bridge_unavailable` 502。兼容性基线为 Node.js 22，
+通过归档完整性、静态资源、SPA fallback、同源 `/api/health` 和进程退出清理冒烟验证。
+
 ### 7.2 表结构
 
 ```sql

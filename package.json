@@ -36,6 +36,8 @@
     "desktop:pack": "npm run build && node scripts/package-desktop.mjs --dir",
     "desktop:dist": "npm run build && node scripts/package-desktop.mjs",
     "smoke:desktop-package": "node scripts/smoke-desktop-package.mjs",
+    "web:dist": "npm run build && node scripts/package-web-release.mjs",
+    "smoke:web-package": "node scripts/smoke-web-package.mjs",
     "start:server": "npm run start -w @openos/server",
     "presmoke:genapps-v2": "npm run build -w @openos/shared && npm run build -w @openos/server",
     "smoke:genapps-v2": "node scripts/smoke-gen-apps-v2.mjs",

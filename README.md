@@ -152,6 +152,15 @@ npm run desktop:dist          # Create installers in release/
 
 Packaged applications contain the Bridge and runtime and do not require Node.js on the user's machine. Local builds are unsigned by default; production distribution should configure platform signing and notarization credentials in CI.
 
+Web deployment archive:
+
+```bash
+npm run web:dist             # Build release/OpenOS-0.1.0-web.7z
+npm run smoke:web-package    # Extract it and verify the UI, Bridge proxy, and SPA fallback
+```
+
+The Web archive contains the compiled frontend, a bundled local Bridge, and a zero-dependency Node.js launcher. It requires Node.js 22 or newer and binds to `127.0.0.1` by default. See [Web deployment](docs/web-deployment.md) for startup, data, security, and rollback guidance.
+
 On first use, open **System Settings -> Providers** and connect a model provider through OAuth or an API key. Then click **App** in the Dock, open Launchpad, and search for anything, such as "calculator", to generate an application.
 
 ## ⚙️ Configuration
