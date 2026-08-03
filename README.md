@@ -155,4 +155,4 @@ OPENOS_GENAPPS_FAKE=1 npm run dev:server              # 无模型开发（确定
 
 ## 📄 License
 
-[MIT](LICENSE)
+[Apache License 2.0](LICENSE)。再分发时请同时保留 [NOTICE](NOTICE)。

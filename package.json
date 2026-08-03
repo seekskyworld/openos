@@ -5,7 +5,7 @@
   "type": "module",
   "description": "OpenOS — Generate Everything, Create Infinite. AI desktop OS shell that generates apps on demand (Electron + TypeScript).",
   "author": "OpenOS Contributors",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "main": "desktop/dist/main.cjs",
   "workspaces": [
     "desktop",
@@ -56,6 +56,7 @@
     "files": [
       "package.json",
       "LICENSE",
+      "NOTICE",
       "docs/third-party-licenses.md",
       "desktop/dist/**/*",
       "!desktop/dist/**/*.map",

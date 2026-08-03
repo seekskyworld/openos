@@ -1,6 +1,6 @@
 # 第三方依赖许可
 
-OpenOS 本身按根目录 `LICENSE` 中的 MIT 许可证发布。运行时依赖来自 npm，具体版本、完整依赖树和每个包声明的许可证以提交的 `package-lock.json` 为准；构建时不得使用未锁定的依赖版本。
+OpenOS 本身按根目录 `LICENSE` 中的 Apache License 2.0 发布，归属声明见根目录 `NOTICE`。运行时依赖来自 npm，具体版本、完整依赖树和每个包声明的许可证以提交的 `package-lock.json` 为准；构建时不得使用未锁定的依赖版本。
 
 以下清单由当前 `package-lock.json` 中非开发、非 workspace 的顶层安装包生成：
 

@@ -14,4 +14,4 @@
 
 请通过 `SECURITY.md` 中的私密渠道联系维护者报告严重或敏感事件；普通社区行为问题可通过私密维护者渠道报告。维护者会公平、及时地调查，并可删除内容、限制参与或终止参与权限。善意报告不会因报告本身受到惩罚。
 
-本准则参考 [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) 2.1，项目按 MIT 许可证发布。
+本准则参考 [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) 2.1，项目按 Apache License 2.0 发布。

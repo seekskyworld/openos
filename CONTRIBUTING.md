@@ -3,6 +3,9 @@
 感谢你的关注！OpenOS 是 TypeScript + Electron 的 monorepo（npm workspaces），
 欢迎任何形式的贡献：Bug 报告、功能建议、文档改进、代码 PR。
 
+除非贡献者在提交时明确书面声明其他条款，所有有意提交并被项目接收的贡献均按
+[Apache License 2.0](LICENSE) 授权，不附加额外条款。
+
 ## 开发环境
 
 - Node.js ≥ 22（`node:sqlite` 为内置模块）
