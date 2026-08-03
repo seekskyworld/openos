@@ -197,7 +197,8 @@ OPENOS_GENAPPS_FAKE=1 npm run dev:server              # 无模型开发（确定
 2. 涉及生成应用安全面（ArtifactCompiler / Validator / 沙箱策略）的改动附带说明与冒烟结果；
 3. UI 改动兼顾浅色与深色主题（统一使用 `--surface-*` / `--ink-*` / `--line-*` 主题变量）。
 
-详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。使用 Coding Agent 贡献时请先阅读
+[AGENTS.md](AGENTS.md)，其中定义了 Issue 关联、代码与架构文档同步、安全和验证规范。
 
 社区协作遵循 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。安全漏洞请按
 [SECURITY.md](SECURITY.md) 私密报告，不要创建公开 Issue。第三方依赖许可说明见

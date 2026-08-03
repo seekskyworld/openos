@@ -3,6 +3,8 @@
 感谢你的关注！OpenOS 是 TypeScript + Electron 的 monorepo（npm workspaces），
 欢迎任何形式的贡献：Bug 报告、功能建议、文档改进、代码 PR。
 
+使用 Coding Agent 参与贡献时，必须先阅读并遵守根目录 [AGENTS.md](AGENTS.md)。
+
 除非贡献者在提交时明确书面声明其他条款，所有有意提交并被项目接收的贡献均按
 [Apache License 2.0](LICENSE) 授权，不附加额外条款。
 
@@ -34,13 +36,15 @@ npm run dev:web-stack  # 后端 + Vite dev server，浏览器打开 http://127.0
 
 ## 提交 PR 前
 
-1. `npm run typecheck` 与 `npm run build` 全部通过；
-2. 后端改动跑一遍相关冒烟脚本（`server/scripts/`），如
+1. PR 使用 `Closes #编号` / `Fixes #编号` / `Refs #编号` 关联真实 Issue；
+2. 代码与对应架构、接口或用户文档在同一个 PR 中同步更新；
+3. `npm run typecheck` 与 `npm run build` 全部通过；
+4. 后端改动跑一遍相关冒烟脚本（`server/scripts/`），如
    `npx tsx server/scripts/smoke-agent-core-run.ts`；
-3. UI 改动同时检查浅色与深色主题——颜色一律使用主题变量
+5. UI 改动同时检查浅色与深色主题——颜色一律使用主题变量
    （`--surface-*` / `--ink-*` / `--line-*`），不要硬编码色值；
-4. 文案改动同步 `web/src/i18n/` 的 zh-CN 与 en-US 两份词条；
-5. 涉及生成应用安全面（ArtifactCompiler / ArtifactValidator / iframe 沙箱策略 / CSP）
+6. 文案改动同步 `web/src/i18n/` 的 zh-CN 与 en-US 两份词条；
+7. 涉及生成应用安全面（ArtifactCompiler / ArtifactValidator / iframe 沙箱策略 / CSP）
    的改动，请在 PR 描述中说明威胁模型影响并附冒烟结果。
 
 ## 架构约定
