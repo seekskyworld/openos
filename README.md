@@ -31,6 +31,7 @@
 
 <p align="center">
   <a href="#vision">Vision</a> ·
+  <a href="#screenshots">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#quick-start">Quick Start</a> ·
@@ -64,6 +65,16 @@ The roadmap advances in stages:
 "Instant launch" should not mean hiding a wait behind an empty shell. It should mean that the first useful interface appears as early as possible, every completed part is immediately usable, and later content fills in place without destabilizing the page. As model reasoning and output continue to accelerate, the distance from natural language to a running application can keep shrinking until software appears in real time with the idea itself.
 
 Ultimately, OpenOS is not a fixed collection of applications. It is an open generative application runtime where tools, content, games, data interfaces, and software forms that do not yet have names can be composed on demand. **Everything is possible.**
+
+---
+
+<a id="screenshots"></a>
+
+## Screenshots
+
+<p align="center">
+  <img src="assets/screenshots/openos-desktop.png" alt="OpenOS desktop showing Sir and Launchpad" width="1200" />
+</p>
 
 ---
 

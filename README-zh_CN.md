@@ -31,6 +31,7 @@
 
 <p align="center">
   <a href="#vision">开源愿景</a> ·
+  <a href="#screenshots">界面截图</a> ·
   <a href="#features">核心特性</a> ·
   <a href="#architecture">架构</a> ·
   <a href="#quick-start">快速开始</a> ·
@@ -64,6 +65,16 @@ OpenOS 想探索另一条开源路线：**不等待完整应用一次性交付�
 “秒开”不应该只是先展示一个空壳来掩盖等待，而应该意味着：首个有用界面尽早出现，已经生成的部分立即可用，后续内容稳定地原地补齐。随着模型推理和输出速度继续提升，自然语言到可运行应用的距离会不断缩短，直到应用可以按想法实时出现。
 
 最终，OpenOS 不只是一个固定应用集合，而是一套开放的生成式应用运行时：工具、内容、游戏、数据界面，乃至今天还没有名字的软件形态，都可以被现场组合出来。**一切皆有可能。**
+
+---
+
+<a id="screenshots"></a>
+
+## 界面截图
+
+<p align="center">
+  <img src="assets/screenshots/openos-desktop.png" alt="OpenOS 桌面、Sir 助手与启动台" width="1200" />
+</p>
 
 ---
 
